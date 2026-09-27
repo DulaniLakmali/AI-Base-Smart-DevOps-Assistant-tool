@@ -1,0 +1,24 @@
+{
+  "name": "smart-devops-assistant",
+  "version": "1.0.0",
+  "description": "Agentic AI-Powered Smart DevOps Assistant for Autonomous Software Delivery and Infrastructure Management",
+  "scripts": {
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "test": "npm --prefix backend test",
+    "seed": "npm --prefix backend run seed",
+    "backend": "npm --prefix backend run dev",
+    "frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build"
+  },
+  "keywords": [
+    "devops",
+    "agentic-ai",
+    "langchain",
+    "kubernetes",
+    "docker",
+    "ci-cd",
+    "sre"
+  ],
+  "author": "Horizon Campus Final Year Research Group",
+  "license": "ISC"
+}
