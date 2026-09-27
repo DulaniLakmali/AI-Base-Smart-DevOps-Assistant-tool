@@ -1,10 +1,20 @@
 import express from "express";
-import { GitHubService } from "../services/githubService.js";
+import { GitHubService, DEFAULT_OWNER, DEFAULT_REPO, DEFAULT_BRANCH } from "../services/githubService.js";
 import { checkPermission } from "../middleware/authRbac.js";
 import { recordAudit } from "../middleware/auditLogger.js";
 
 export const createGitHubRouter = () => {
   const router = express.Router();
+
+  // GET /api/github/config - Get active repository & branch configuration
+  router.get("/config", (req, res) => {
+    res.json({
+      owner: DEFAULT_OWNER,
+      repo: DEFAULT_REPO,
+      branch: DEFAULT_BRANCH,
+      hasToken: Boolean(GitHubService.getToken())
+    });
+  });
 
   // POST /api/github/token - Configure token
   router.post("/token", checkPermission("write"), (req, res) => {

@@ -24,7 +24,8 @@ export const config = {
   // GitHub Integration
   GITHUB_TOKEN: process.env.GITHUB_TOKEN || "",
   GITHUB_DEFAULT_OWNER: process.env.GITHUB_DEFAULT_OWNER || "DulaniLakmali",
-  GITHUB_DEFAULT_REPO: process.env.GITHUB_DEFAULT_REPO || "Smart-DevOps-Assistant",
+  GITHUB_DEFAULT_REPO: process.env.GITHUB_DEFAULT_REPO || "AI-Base-Smart-DevOps-Assistant-tool",
+  GITHUB_DEFAULT_BRANCH: process.env.GITHUB_DEFAULT_BRANCH || "master",
   
   // Thresholds (from Chapter 3 constraints)
   THRESHOLDS: {

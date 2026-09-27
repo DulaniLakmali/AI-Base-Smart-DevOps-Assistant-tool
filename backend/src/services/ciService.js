@@ -97,7 +97,7 @@ export class CIService {
 
         // Prepend any currently pending/polling runs not yet listed by GitHub API
         const pendingRuns = activePipelines.filter(
-          (p) => p.source === "GITHUB_ACTIONS" && p.id.startsWith("gh-pending-")
+          (p) => p.source === "GITHUB_ACTIONS" && p.id.startsWith("gh-pending-") && !p.realRunId && !livePipelines.some(lp => lp.id === p.id || lp.id === String(p.realRunId))
         );
 
         return {
@@ -110,6 +110,17 @@ export class CIService {
       }
     } catch (err) {
       console.warn("Real GitHub Actions fetch failed:", err.message);
+    }
+
+    if (mode === "real") {
+      const pendingRuns = activePipelines.filter((p) => p.source === "GITHUB_ACTIONS");
+      return {
+        isLive: true,
+        mode: "real",
+        owner,
+        repo,
+        pipelines: pendingRuns
+      };
     }
 
     return {
@@ -140,6 +151,29 @@ export class CIService {
             name: s.name,
             status: s.status === "success" ? "completed" : s.status,
             conclusion: s.status,
+            duration: s.duration,
+            logs: s.logs
+          }))
+        }]
+      };
+    }
+
+    // Pending GitHub Actions run that hasn't received realRunId yet
+    if (sim && sim.source === "GITHUB_ACTIONS" && !sim.realRunId) {
+      return {
+        isLive: true,
+        runId,
+        owner,
+        repo,
+        jobs: [{
+          id: sim.id,
+          name: sim.name,
+          status: sim.status,
+          steps: sim.stages.map((s, idx) => ({
+            number: idx + 1,
+            name: s.name,
+            status: s.status,
+            conclusion: s.status === "success" ? "success" : null,
             duration: s.duration,
             logs: s.logs
           }))
@@ -183,6 +217,60 @@ export class CIService {
     const workflowId = options.workflowId || "ci.yml";
 
     const token = GitHubService.getToken(reqToken);
+
+    // Real GitHub Actions Dispatch Mode
+    if (mode === "real") {
+      if (!token) {
+        throw new Error("GitHub token not configured. Please add GITHUB_TOKEN to backend/.env or configure your Personal Access Token in the GitHub Integration tab.");
+      }
+
+      console.log(`🚀 [Real CI/CD] Dispatching GitHub Actions workflow '${workflowId}' on '${owner}/${repo}' (ref: '${ref}')...`);
+      const dispatchTimestamp = Date.now();
+
+      const dispatchResult = await GitHubService.triggerWorkflowDispatch(owner, repo, workflowId, ref, token);
+
+      if (!dispatchResult.success) {
+        throw new Error(`GitHub Actions dispatch failed: ${dispatchResult.message}`);
+      }
+
+      const tempId = `gh-pending-${Date.now().toString().slice(-4)}`;
+      const livePipeline = {
+        id: tempId,
+        realRunId: null,
+        name: pipelineName || "Smart DevOps Assistant CI/CD Pipeline",
+        branch: ref,
+        commit: "HEAD",
+        commitMsg: `Dispatched to ${owner}/${repo} via GitHub Actions API`,
+        status: "running",
+        rawStatus: "queued",
+        rawConclusion: null,
+        duration: "Queued on GitHub Actions...",
+        source: "GITHUB_ACTIONS",
+        owner,
+        repo,
+        workflowId,
+        triggeredAt: new Date().toISOString(),
+        stages: [
+          { name: "1. Code Checkout", status: "running", duration: "...", logs: "GitHub Actions runner allocating..." },
+          { name: "2. Set up Node.js Runtime", status: "pending", duration: "-", logs: "" },
+          { name: "3. Install Backend Dependencies", status: "pending", duration: "-", logs: "" },
+          { name: "4. Run Evaluation Benchmark Tests (TC001-TC009)", status: "pending", duration: "-", logs: "" },
+          { name: "5. Install Frontend Dependencies", status: "pending", duration: "-", logs: "" },
+          { name: "6. Build Frontend Production Bundle", status: "pending", duration: "-", logs: "" },
+          { name: "7. Container & DevSecOps Validation", status: "pending", duration: "-", logs: "" },
+          { name: "8. Pipeline Success Notification", status: "pending", duration: "-", logs: "" }
+        ]
+      };
+
+      activePipelines.unshift(livePipeline);
+
+      if (io) {
+        io.emit("ci_pipeline_update", livePipeline);
+      }
+
+      this.startGitHubRunPoller(livePipeline, owner, repo, workflowId, ref, token, io, dispatchTimestamp);
+      return livePipeline;
+    }
 
     // Fast-path for unit tests and local simulation sandbox
     const isExplicitSimulated = mode === "simulated" || pipelineName === "automated-test-run";
@@ -275,6 +363,7 @@ export class CIService {
 
             if (recentRun) {
               foundRealRun = true;
+              const prevId = livePipeline.id;
               livePipeline.realRunId = recentRun.id;
               livePipeline.id = String(recentRun.id);
               livePipeline.runNumber = recentRun.runNumber;
@@ -285,13 +374,13 @@ export class CIService {
               livePipeline.rawConclusion = recentRun.conclusion;
 
               // Replace temporary id in memory list
-              const pIdx = activePipelines.findIndex((p) => p.id === livePipeline.id || p.id.startsWith("gh-pending-"));
+              const pIdx = activePipelines.findIndex((p) => p.id === livePipeline.id || p.id === prevId || p.id.startsWith("gh-pending-"));
               if (pIdx >= 0) {
                 activePipelines[pIdx] = livePipeline;
               }
 
               console.log(`🎯 [CI Poller] Located real GitHub Actions run #${recentRun.runNumber} (ID: ${recentRun.id}, Status: ${recentRun.status})`);
-              if (io) io.emit("ci_pipeline_update", livePipeline);
+              if (io) io.emit("ci_pipeline_update", { ...livePipeline, previousId: prevId });
             }
           }
         }

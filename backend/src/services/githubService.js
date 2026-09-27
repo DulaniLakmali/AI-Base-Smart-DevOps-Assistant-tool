@@ -8,7 +8,8 @@ import { config } from "../config/env.js";
 
 let configuredToken = config.GITHUB_TOKEN || process.env.GITHUB_TOKEN || "";
 export const DEFAULT_OWNER = config.GITHUB_DEFAULT_OWNER || "DulaniLakmali";
-export const DEFAULT_REPO = config.GITHUB_DEFAULT_REPO || "Smart-DevOps-Assistant";
+export const DEFAULT_REPO = config.GITHUB_DEFAULT_REPO || "AI-Base-Smart-DevOps-Assistant-tool";
+export const DEFAULT_BRANCH = config.GITHUB_DEFAULT_BRANCH || "master";
 
 export class GitHubService {
   static setToken(token) {
@@ -16,7 +17,7 @@ export class GitHubService {
   }
 
   static getToken(reqToken) {
-    return reqToken || configuredToken || config.GITHUB_TOKEN || "";
+    return config.GITHUB_TOKEN || reqToken || configuredToken || "";
   }
 
   static getHeaders(token) {

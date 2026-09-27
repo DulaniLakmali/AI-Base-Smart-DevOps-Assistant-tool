@@ -30,50 +30,124 @@ export default function PipelineVisualizerView() {
   const [terminalLogs, setTerminalLogs] = useState("");
   const [logsLoading, setLogsLoading] = useState(false);
   const [isTriggering, setIsTriggering] = useState(false);
-  const [targetBranch, setTargetBranch] = useState("main");
+  const [targetBranch, setTargetBranch] = useState("master");
   const [copiedLogs, setCopiedLogs] = useState(false);
+  const [isAutoPolling, setIsAutoPolling] = useState(true);
 
-  const defaultOwner = "DulaniLakmali";
-  const defaultRepo = "Smart-DevOps-Assistant";
+  const [activeOwner, setActiveOwner] = useState("DulaniLakmali");
+  const [activeRepo, setActiveRepo] = useState("AI-Base-Smart-DevOps-Assistant-tool");
+  const [hasServerToken, setHasServerToken] = useState(false);
+
+  const getHeaders = () => {
+    // Only send browser token if backend has no GITHUB_TOKEN configured
+    const patToken = localStorage.getItem("gh_pat_token");
+    if (!hasServerToken && patToken) {
+      return { "x-github-token": patToken };
+    }
+    return {};
+  };
 
   useEffect(() => {
-    fetchPipelines(pipelineMode);
+    const loadConfig = async () => {
+      try {
+        const res = await api.get("/github/config");
+        if (res.data?.owner) setActiveOwner(res.data.owner);
+        if (res.data?.repo) setActiveRepo(res.data.repo);
+        if (res.data?.branch) setTargetBranch(res.data.branch);
+        if (res.data?.hasToken) setHasServerToken(true);
+        fetchPipelines(pipelineMode, res.data?.owner, res.data?.repo);
+      } catch (err) {
+        console.warn("Could not load github config, using defaults:", err);
+        fetchPipelines(pipelineMode);
+      }
+    };
+    loadConfig();
 
     const handlePipelineUpdate = (updatedPipeline) => {
       setPipelines((prev) => {
-        const index = prev.findIndex((p) => p.id === updatedPipeline.id);
+        const index = prev.findIndex(
+          (p) =>
+            p.id === updatedPipeline.id ||
+            (updatedPipeline.previousId && p.id === updatedPipeline.previousId) ||
+            (p.realRunId && p.realRunId === updatedPipeline.realRunId)
+        );
         if (index >= 0) {
           const newPipelines = [...prev];
-          newPipelines[index] = updatedPipeline;
+          newPipelines[index] = { ...newPipelines[index], ...updatedPipeline };
           return newPipelines;
         }
-        return [updatedPipeline, ...prev];
+        return [updatedPipeline, ...prev.filter((p) => p.id !== updatedPipeline.previousId && !p.id.startsWith("gh-pending-"))];
       });
 
-      setSelectedPipeline((prev) => (prev?.id === updatedPipeline.id ? updatedPipeline : prev));
+      setSelectedPipeline((prev) => {
+        if (!prev) return updatedPipeline;
+        const isMatch =
+          prev.id === updatedPipeline.id ||
+          (updatedPipeline.previousId && prev.id === updatedPipeline.previousId) ||
+          (prev.id.startsWith("gh-pending-") && !prev.realRunId) ||
+          (prev.realRunId && prev.realRunId === updatedPipeline.realRunId);
+
+        if (isMatch) {
+          return { ...prev, ...updatedPipeline, id: updatedPipeline.id };
+        }
+        return prev;
+      });
     };
 
     socket.on("ci_pipeline_update", handlePipelineUpdate);
     return () => socket.off("ci_pipeline_update", handlePipelineUpdate);
   }, [pipelineMode]);
 
+  // Automatic Polling Loop for Real GitHub Actions cloud execution
+  useEffect(() => {
+    if (!isAutoPolling || pipelineMode !== "real") return;
+
+    const isRunning = (p) =>
+      p && (p.status === "running" || p.rawStatus === "in_progress" || p.rawStatus === "queued" || p.id?.startsWith("gh-pending-"));
+
+    const hasActiveRun = pipelines.some(isRunning) || isRunning(selectedPipeline) || isTriggering;
+    const pollIntervalTime = hasActiveRun ? 3500 : 8000;
+
+    const interval = setInterval(() => {
+      fetchPipelines(pipelineMode, activeOwner, activeRepo, true);
+      if (selectedPipeline && isRunning(selectedPipeline)) {
+        fetchRunJobs(selectedPipeline);
+      }
+    }, pollIntervalTime);
+
+    return () => clearInterval(interval);
+  }, [isAutoPolling, pipelineMode, pipelines, selectedPipeline, isTriggering, activeOwner, activeRepo]);
+
+  // Keep jobs and step logs updated when selectedPipeline changes or its execution status updates
   useEffect(() => {
     if (selectedPipeline) {
       fetchRunJobs(selectedPipeline);
     }
-  }, [selectedPipeline?.id]);
+  }, [selectedPipeline?.id, selectedPipeline?.status, selectedPipeline?.rawStatus]);
 
-  const fetchPipelines = async (mode = pipelineMode) => {
+  const fetchPipelines = async (mode = pipelineMode, owner = activeOwner, repo = activeRepo, silent = false) => {
     try {
-      const res = await api.get(`/devops/ci/pipelines?mode=${mode}&owner=${defaultOwner}&repo=${defaultRepo}`);
+      const res = await api.get(`/devops/ci/pipelines?mode=${mode}&owner=${owner}&repo=${repo}`, {
+        headers: getHeaders()
+      });
       const list = res.data?.pipelines || [];
       setPipelines(list);
       if (list.length > 0) {
-        setSelectedPipeline(list[0]);
+        setSelectedPipeline((prev) => {
+          if (!prev) return list[0];
+          // If prev was a temporary pending placeholder, switch to the real run in list
+          if (prev.id?.startsWith("gh-pending-") && !prev.realRunId) {
+            return list[0];
+          }
+          const matched = list.find((p) => p.id === prev.id || (p.realRunId && p.realRunId === prev.realRunId));
+          return matched ? { ...prev, ...matched } : prev;
+        });
       } else {
-        setSelectedPipeline(null);
-        setJobsData(null);
-        setTerminalLogs("");
+        if (!silent) {
+          setSelectedPipeline(null);
+          setJobsData(null);
+          setTerminalLogs("");
+        }
       }
     } catch (err) {
       console.error("Failed to fetch pipelines:", err);
@@ -83,7 +157,9 @@ export default function PipelineVisualizerView() {
   const fetchRunJobs = async (pipeline) => {
     if (!pipeline) return;
     try {
-      const res = await api.get(`/devops/ci/runs/${pipeline.id}/jobs?owner=${defaultOwner}&repo=${defaultRepo}`);
+      const res = await api.get(`/devops/ci/runs/${pipeline.id}/jobs?owner=${activeOwner}&repo=${activeRepo}`, {
+        headers: getHeaders()
+      });
       setJobsData(res.data);
 
       const firstJob = res.data?.jobs?.[0];
@@ -98,7 +174,9 @@ export default function PipelineVisualizerView() {
   const fetchJobLogs = async (jobId) => {
     setLogsLoading(true);
     try {
-      const res = await api.get(`/devops/ci/jobs/${jobId}/logs?owner=${defaultOwner}&repo=${defaultRepo}`);
+      const res = await api.get(`/devops/ci/jobs/${jobId}/logs?owner=${activeOwner}&repo=${activeRepo}`, {
+        headers: getHeaders()
+      });
       setTerminalLogs(res.data || "No output logs available.");
     } catch (err) {
       setTerminalLogs("Logs unavailable or pending execution.");
@@ -110,21 +188,27 @@ export default function PipelineVisualizerView() {
   const handleTrigger = async () => {
     setIsTriggering(true);
     try {
-      const res = await api.post("/devops/ci/trigger", {
-        pipelineName: "Smart DevOps Assistant CI/CD Pipeline",
-        mode: pipelineMode,
-        owner: defaultOwner,
-        repo: defaultRepo,
-        ref: targetBranch,
-        workflowId: "ci.yml"
-      });
+      const res = await api.post(
+        "/devops/ci/trigger",
+        {
+          pipelineName: "Smart DevOps Assistant CI/CD Pipeline",
+          mode: pipelineMode,
+          owner: activeOwner,
+          repo: activeRepo,
+          ref: targetBranch,
+          workflowId: "ci.yml"
+        },
+        { headers: getHeaders() }
+      );
 
-      // Brief wait for GitHub Actions to register the run
-      setTimeout(() => {
-        fetchPipelines(pipelineMode);
-      }, 1500);
-
+      // Prepend live/pending run immediately
       setSelectedPipeline(res.data);
+      setPipelines((prev) => [res.data, ...prev.filter((p) => p.id !== res.data.id)]);
+
+      // Fast multi-stage polls to catch GitHub Actions run allocation
+      setTimeout(() => fetchPipelines(pipelineMode, activeOwner, activeRepo, true), 1200);
+      setTimeout(() => fetchPipelines(pipelineMode, activeOwner, activeRepo, true), 3500);
+      setTimeout(() => fetchPipelines(pipelineMode, activeOwner, activeRepo, true), 7000);
     } catch (err) {
       alert("Error triggering pipeline: " + (err.response?.data?.error || err.message));
     } finally {
@@ -185,13 +269,35 @@ export default function PipelineVisualizerView() {
                 <Radio size={10} className="pulse-icon" />
                 {pipelineMode === "real" ? "Real GitHub Actions Connected" : "Simulated Local Runner"}
               </span>
+              {pipelineMode === "real" && (
+                <span
+                  onClick={() => setIsAutoPolling((p) => !p)}
+                  title="Click to toggle automatic GitHub run poller"
+                  style={{
+                    fontSize: "0.65rem",
+                    background: isAutoPolling ? "rgba(0, 242, 254, 0.12)" : "rgba(100, 116, 139, 0.2)",
+                    color: isAutoPolling ? "var(--accent-cyan)" : "var(--text-muted)",
+                    border: `1px solid ${isAutoPolling ? "rgba(0, 242, 254, 0.3)" : "var(--border-subtle)"}`,
+                    padding: "0.15rem 0.5rem",
+                    borderRadius: "12px",
+                    fontWeight: 600,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.3rem",
+                    cursor: "pointer"
+                  }}
+                >
+                  <span className={isAutoPolling ? "pulse-icon" : ""} style={{ display: "inline-block", width: "6px", height: "6px", borderRadius: "50%", background: isAutoPolling ? "var(--accent-cyan)" : "var(--text-muted)" }} />
+                  {isAutoPolling ? "Live Poller (3.5s)" : "Poller Paused"}
+                </span>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.2rem" }}>
               <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
                 Connected Repository:
               </span>
               <a
-                href={`https://github.com/${defaultOwner}/${defaultRepo}`}
+                href={`https://github.com/${activeOwner}/${activeRepo}`}
                 target="_blank"
                 rel="noreferrer"
                 style={{
@@ -204,7 +310,7 @@ export default function PipelineVisualizerView() {
                   fontWeight: 600
                 }}
               >
-                <Github size={12} /> {defaultOwner}/{defaultRepo} <ExternalLink size={11} />
+                <Github size={12} /> {activeOwner}/{activeRepo} <ExternalLink size={11} />
               </a>
             </div>
           </div>
