@@ -26,6 +26,10 @@ export const config = {
   GITHUB_DEFAULT_OWNER: process.env.GITHUB_DEFAULT_OWNER || "DulaniLakmali",
   GITHUB_DEFAULT_REPO: process.env.GITHUB_DEFAULT_REPO || "AI-Base-Smart-DevOps-Assistant-tool",
   GITHUB_DEFAULT_BRANCH: process.env.GITHUB_DEFAULT_BRANCH || "master",
+
+  // Vector Database (Pinecone & Local SQLite Vector Store)
+  PINECONE_API_KEY: process.env.PINECONE_API_KEY || "",
+  PINECONE_INDEX: process.env.PINECONE_INDEX || "devops-rag-kb",
   
   // Thresholds (from Chapter 3 constraints)
   THRESHOLDS: {

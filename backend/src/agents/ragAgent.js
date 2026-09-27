@@ -466,10 +466,27 @@ export class RAGAgent {
   }
 
   /**
+   * Add and embed a new document into the persistent vector database
+   */
+  static async addDoc(doc) {
+    await this.init();
+    return await VectorIndexService.addDocument(doc);
+  }
+
+  /**
+   * Delete a document from the persistent vector database
+   */
+  static async deleteDoc(docId) {
+    await this.init();
+    return await VectorIndexService.deleteDocument(docId);
+  }
+
+  /**
    * Retrieve all indexed documents
    */
   static getAllDocs() {
-    return DEVOPS_KNOWLEDGE_BASE;
+    const liveDocs = VectorIndexService.getAllDocuments();
+    return liveDocs.length > 0 ? liveDocs : DEVOPS_KNOWLEDGE_BASE;
   }
 
   /**
@@ -477,11 +494,12 @@ export class RAGAgent {
    */
   static getIndexStatus() {
     const status = VectorIndexService.getStatus();
+    const liveCount = VectorIndexService.getAllDocuments().length;
     return {
       initialized: this.isInitialized,
       ...status,
       dimension: status.vectorDimension || 384,
-      totalDocs: DEVOPS_KNOWLEDGE_BASE.length
+      totalDocs: liveCount > 0 ? liveCount : DEVOPS_KNOWLEDGE_BASE.length
     };
   }
 }

@@ -9,7 +9,8 @@ import {
   Terminal,
   ChevronDown,
   ChevronUp,
-  AlertCircle
+  AlertCircle,
+  BookOpen
 } from "lucide-react";
 
 export default function AgentChatView({ onTriggerApproval, currentUser }) {
@@ -120,6 +121,7 @@ export default function AgentChatView({ onTriggerApproval, currentUser }) {
             type: "assistant",
             text: `⚠️ **Approval Required**: The proposed workflow contains high-risk actions classified as \`${data.riskLevel}\`. A human authorization prompt has been opened.`,
             plan: data.plan,
+            ragMatches: data.ragMatches,
             isApprovalRequired: true,
             provider: data.provider,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -134,6 +136,7 @@ export default function AgentChatView({ onTriggerApproval, currentUser }) {
             type: "assistant",
             text: data.plan?.summary || "Execution completed.",
             plan: data.plan,
+            ragMatches: data.ragMatches,
             execution: data.execution,
             provider: data.provider,
             timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
@@ -214,6 +217,30 @@ export default function AgentChatView({ onTriggerApproval, currentUser }) {
               <p style={{ fontSize: "0.92rem", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                 {m.text}
               </p>
+
+              {/* Grounded Vector RAG Runbooks */}
+              {m.ragMatches && m.ragMatches.length > 0 && (
+                <div style={{
+                  marginTop: "0.6rem",
+                  padding: "0.5rem 0.75rem",
+                  background: "rgba(0, 242, 254, 0.05)",
+                  border: "1px solid rgba(0, 242, 254, 0.2)",
+                  borderRadius: "var(--radius-sm)",
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "0.4rem"
+                }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--accent-cyan)", display: "flex", alignItems: "center", gap: "0.3rem", fontWeight: 600 }}>
+                    <BookOpen size={13} /> Grounded by Vector RAG:
+                  </span>
+                  {m.ragMatches.map((r, ri) => (
+                    <span key={ri} className="badge badge-info" style={{ fontSize: "0.7rem", padding: "0.15rem 0.45rem" }}>
+                      {r.title} ({r.matchPercentage || (Math.round((r.score || r.similarityScore || 0) * 100) + "%")})
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Task Plan Details Card */}
               {m.plan && m.plan.tasks && (

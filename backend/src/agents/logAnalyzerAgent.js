@@ -1,5 +1,6 @@
 import { LLMProvider } from "./llmProvider.js";
 import { redactSecrets } from "../middleware/secretRedactor.js";
+import { RAGAgent } from "./ragAgent.js";
 
 /**
  * Log Analyzer Agent (Chapter 3.4.2, 4.2.3, 6.3.2 TC003)
@@ -8,10 +9,31 @@ import { redactSecrets } from "../middleware/secretRedactor.js";
  * - Error classification (HTTP 500, DB Constraint, Pod CrashLoopBackOff, OOMKilled)
  * - Root Cause Analysis (RCA) with explainable reasoning
  * - Generates automated remediation steps and diff patches
+ * - Retrieves grounded SRE incident runbooks from 384-dimensional Vector RAG Database
  */
 export class LogAnalyzerAgent {
   static async analyzeLog({ logContent, logType = "auto", context = "" }) {
     const sanitizedLog = redactSecrets(logContent);
+
+    // 1. Semantic Runbook Retrieval from Vector RAG Database
+    let matchingRunbook = null;
+    try {
+      const ragRes = await RAGAgent.searchKnowledge(sanitizedLog, { mode: "vector", limit: 1 });
+      const topMatch = ragRes?.results?.[0];
+      if (topMatch && (topMatch.similarityScore || 0) > 0.35) {
+        matchingRunbook = {
+          id: topMatch.id,
+          title: topMatch.title,
+          category: topMatch.category,
+          matchPercentage: topMatch.matchPercentage || Math.round(topMatch.similarityScore * 100) + "%",
+          summary: topMatch.summary,
+          snippet: topMatch.snippet,
+          docUrl: topMatch.docUrl
+        };
+      }
+    } catch (e) {
+      console.warn("⚠️ Vector RAG retrieval failed in LogAnalyzer:", e.message);
+    }
 
     const systemPrompt = `You are a Principal Site Reliability Engineer (SRE) and AI Log Diagnostics Agent.
 Analyze the provided log trace or error snippet.
@@ -30,7 +52,9 @@ Log Content:
 \`\`\`
 ${sanitizedLog}
 \`\`\`
-Additional Context: ${context}`;
+Additional Context: ${context}${
+      matchingRunbook ? `\nVerified Knowledge Base Incident Runbook:\n${matchingRunbook.title}: ${matchingRunbook.summary}` : ""
+    }`;
 
     // If external LLM key is configured, use it; otherwise use expert pattern engine
     if (process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY) {
@@ -43,7 +67,11 @@ Additional Context: ${context}`;
         const parsed = JSON.parse(content);
         if (parsed.category && parsed.rootCause) {
           return {
-            analysis: parsed,
+            analysis: {
+              ...parsed,
+              runbook: matchingRunbook
+            },
+            matchingRunbook,
             sanitizedLog,
             provider,
             latencyMs,
@@ -57,7 +85,11 @@ Additional Context: ${context}`;
 
     const analysis = this.offlineLogRCA(sanitizedLog, logType);
     return {
-      analysis,
+      analysis: {
+        ...analysis,
+        runbook: matchingRunbook
+      },
+      matchingRunbook,
       sanitizedLog,
       provider: "Offline Agentic Core (Research Sandbox)",
       latencyMs: 115,

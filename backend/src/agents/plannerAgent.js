@@ -12,7 +12,8 @@ import { recordAudit } from "../middleware/auditLogger.js";
  * - Flags Human-in-the-Loop approval requirements
  */
 export class PlannerAgent {
-  static async createPlan(userQuery, user) {
+  static async createPlan(userQuery, user, options = {}) {
+    const ragContext = options.ragContext || "";
     const systemPrompt = `You are a Principal DevOps Architect and Agentic Planner.
 Given a user query, decompose the DevOps objective into a structured execution plan.
 Evaluate the risk level:
@@ -36,10 +37,14 @@ Return strictly valid JSON with this schema:
   "recommendedAction": string
 }`;
 
+    const userPrompt = ragContext
+      ? `DevOps Objective: "${userQuery}"\n\nVerified Grounding Runbooks (from Vector RAG):\n${ragContext}`
+      : `Plan DevOps execution for: "${userQuery}"`;
+
     // 1. LLM Reasoning
     const { content, provider, latencyMs } = await LLMProvider.complete({
       systemPrompt,
-      userPrompt: `Plan DevOps execution for: "${userQuery}"`,
+      userPrompt,
       jsonMode: true
     });
 

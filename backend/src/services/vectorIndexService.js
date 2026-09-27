@@ -1,33 +1,97 @@
 import { VectorEmbeddingService, VECTOR_DIMENSION } from "./vectorEmbeddingService.js";
+import { dbAll, dbRun, initDB } from "../database/db.js";
+import { config } from "../config/env.js";
+import { Pinecone } from "@pinecone-database/pinecone";
 
 /**
- * FAISS-Style Vector Index Engine (Chapter 5.1.3 & Chapter 6)
- * In-memory dense vector index providing sub-millisecond Cosine Similarity retrieval,
- * Hybrid Search (Dense Vector + TF-IDF), and comparative benchmark scoring.
+ * Enterprise Vector Index & Vector Database Engine (Chapter 5.1.3 & Chapter 6)
+ * - Persistent SQLite Vector Database (rag_documents & rag_embeddings tables)
+ * - FAISS-style Cosine Similarity continuous 384-dimensional dense vector space
+ * - Optional cloud Pinecone index synchronization
+ * - Triple-mode retrieval (Dense Vector, Hybrid TF-IDF, Keyword)
  */
 
 let indexedDocuments = [];
+let pineconeClient = null;
 
 export class VectorIndexService {
   /**
-   * Initializes the vector index with the provided documents
+   * Initializes the vector database and loads persisted documents/embeddings from SQLite
    */
-  static async initializeIndex(documents) {
-    indexedDocuments = [];
-    for (const doc of documents) {
-      await this.addDocument(doc);
+  static async initializeIndex(fallbackDocuments = []) {
+    await initDB();
+
+    try {
+      // 1. Check if documents and embeddings exist in SQLite Vector Database
+      const rows = await dbAll(`
+        SELECT d.*, e.embedding_json, e.vector_dimension
+        FROM rag_documents d
+        JOIN rag_embeddings e ON d.doc_id = e.doc_id
+      `);
+
+      if (rows && rows.length > 0) {
+        indexedDocuments = rows.map((r) => {
+          let tags = [];
+          try {
+            tags = JSON.parse(r.tags || "[]");
+          } catch {
+            tags = (r.tags || "").split(",").map((t) => t.trim());
+          }
+
+          let embedding = [];
+          try {
+            embedding = JSON.parse(r.embedding_json);
+          } catch {
+            embedding = [];
+          }
+
+          return {
+            id: r.doc_id,
+            title: r.title,
+            category: r.category,
+            tags,
+            summary: r.summary,
+            content: r.content,
+            snippet: r.snippet,
+            docUrl: r.doc_url,
+            embedding,
+            vectorDimension: r.vector_dimension || VECTOR_DIMENSION,
+            indexedAt: r.created_at
+          };
+        });
+
+        console.log(` Loaded ${indexedDocuments.length} DevOps runbooks from persistent SQLite Vector Database.`);
+        return {
+          status: "ready",
+          indexedCount: indexedDocuments.length,
+          dimension: VECTOR_DIMENSION,
+          storage: "SQLITE_PERSISTENT_VECTOR_DB"
+        };
+      }
+    } catch (err) {
+      console.warn("⚠️ SQLite Vector Database query failed, bootstrapping:", err.message);
     }
+
+    // 2. Initial Bootstrapping: Seed fallback documents and generate 384-dim embeddings into SQLite
+    indexedDocuments = [];
+    console.log(`🌱 Bootstrapping ${fallbackDocuments.length} runbooks into SQLite Vector Database...`);
+    for (const doc of fallbackDocuments) {
+      await this.addDocument(doc, false);
+    }
+
+    console.log(`✅ SQLite Vector Database initialized with ${indexedDocuments.length} 384-dim embedded runbooks.`);
     return {
       status: "ready",
       indexedCount: indexedDocuments.length,
-      dimension: VECTOR_DIMENSION
+      dimension: VECTOR_DIMENSION,
+      storage: "SQLITE_PERSISTENT_VECTOR_DB"
     };
   }
 
   /**
-   * Embeds and adds a document to the vector index
+   * Embeds, persists to SQLite, optionally syncs to Pinecone, and adds a document to the index
    */
-  static async addDocument(doc) {
+  static async addDocument(doc, persistToDb = true) {
     const textCorpus = [
       doc.title,
       doc.summary,
@@ -40,12 +104,38 @@ export class VectorIndexService {
 
     const indexedDoc = {
       ...doc,
+      id: doc.id || `doc-${Date.now()}`,
       embedding,
       vectorDimension: VECTOR_DIMENSION,
       indexedAt: new Date().toISOString()
     };
 
-    const existingIdx = indexedDocuments.findIndex((d) => d.id === doc.id);
+    // Persist to SQLite Vector Database
+    if (persistToDb !== false) {
+      try {
+        const tagsJson = JSON.stringify(doc.tags || []);
+        await dbRun(
+          `INSERT OR REPLACE INTO rag_documents (doc_id, title, category, tags, summary, content, snippet, doc_url)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [indexedDoc.id, doc.title, doc.category, tagsJson, doc.summary, doc.content, doc.snippet || "", doc.docUrl || ""]
+        );
+
+        await dbRun(
+          `INSERT OR REPLACE INTO rag_embeddings (doc_id, vector_dimension, embedding_json)
+           VALUES (?, ?, ?)`,
+          [indexedDoc.id, VECTOR_DIMENSION, JSON.stringify(embedding)]
+        );
+      } catch (err) {
+        console.warn("⚠️ Failed to persist document into SQLite Vector DB:", err.message);
+      }
+    }
+
+    // Optional Pinecone Cloud Sync
+    if (config.PINECONE_API_KEY) {
+      this.syncToPinecone(indexedDoc).catch((e) => console.warn("Pinecone sync warning:", e.message));
+    }
+
+    const existingIdx = indexedDocuments.findIndex((d) => d.id === indexedDoc.id);
     if (existingIdx >= 0) {
       indexedDocuments[existingIdx] = indexedDoc;
     } else {
@@ -53,6 +143,47 @@ export class VectorIndexService {
     }
 
     return indexedDoc;
+  }
+
+  /**
+   * Delete a document from SQLite and in-memory index
+   */
+  static async deleteDocument(docId) {
+    try {
+      await dbRun("DELETE FROM rag_embeddings WHERE doc_id = ?", [docId]);
+      await dbRun("DELETE FROM rag_documents WHERE doc_id = ?", [docId]);
+    } catch (err) {
+      console.warn("⚠️ Failed to delete document from SQLite Vector DB:", err.message);
+    }
+
+    indexedDocuments = indexedDocuments.filter((d) => d.id !== docId);
+    return { success: true, deletedId: docId };
+  }
+
+  /**
+   * Optional Pinecone Upsert Sync
+   */
+  static async syncToPinecone(doc) {
+    if (!config.PINECONE_API_KEY) return;
+    try {
+      if (!pineconeClient) {
+        pineconeClient = new Pinecone({ apiKey: config.PINECONE_API_KEY });
+      }
+      const index = pineconeClient.index(config.PINECONE_INDEX || "devops-rag-kb");
+      await index.upsert([
+        {
+          id: doc.id,
+          values: doc.embedding,
+          metadata: {
+            title: doc.title,
+            category: doc.category,
+            summary: doc.summary
+          }
+        }
+      ]);
+    } catch (err) {
+      console.warn("⚠️ Pinecone upsert failed:", err.message);
+    }
   }
 
   /**
@@ -202,7 +333,10 @@ export class VectorIndexService {
   static getStatus() {
     return {
       status: "HEALTHY",
-      engine: "Vector RAG (FAISS-Cosine Embedding Space)",
+      engine: "Vector RAG (FAISS-Cosine Embedding Space & Persistent Vector Database)",
+      storage: "SQLite (devops_assistant.sqlite: rag_documents, rag_embeddings)",
+      pineconeAvailable: Boolean(config.PINECONE_API_KEY),
+      pineconeConnected: Boolean(pineconeClient),
       indexedDocumentsCount: indexedDocuments.length,
       vectorDimension: VECTOR_DIMENSION,
       distanceMetric: "Cosine Similarity (A • B / ||A|| ||B||)",

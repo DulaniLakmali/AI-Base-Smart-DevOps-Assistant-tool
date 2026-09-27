@@ -10,7 +10,8 @@ import {
   ShieldCheck,
   Zap,
   Loader2,
-  CheckCircle2
+  CheckCircle2,
+  BookOpen
 } from "lucide-react";
 
 export default function LogAnalyzerView() {
@@ -272,6 +273,36 @@ export default function LogAnalyzerView() {
                 {diagnosis.analysis.prevention}
               </p>
             </div>
+
+            {/* Grounded Vector RAG Runbook */}
+            {(diagnosis.matchingRunbook || diagnosis.analysis?.runbook) && (
+              <div style={{
+                background: "rgba(0, 242, 254, 0.06)",
+                border: "1px solid rgba(0, 242, 254, 0.25)",
+                borderRadius: "var(--radius-md)",
+                padding: "1rem"
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                  <h4 style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--accent-cyan)", textTransform: "uppercase", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <BookOpen size={14} /> Grounded Incident Runbook (Vector RAG):
+                  </h4>
+                  <span className="badge badge-success" style={{ fontSize: "0.7rem" }}>
+                    {(diagnosis.matchingRunbook || diagnosis.analysis?.runbook).matchPercentage || "High"} Similarity
+                  </span>
+                </div>
+                <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.25rem" }}>
+                  {(diagnosis.matchingRunbook || diagnosis.analysis?.runbook).title}
+                </div>
+                <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", lineHeight: 1.4, margin: 0 }}>
+                  {(diagnosis.matchingRunbook || diagnosis.analysis?.runbook).summary}
+                </p>
+                {(diagnosis.matchingRunbook || diagnosis.analysis?.runbook).snippet && (
+                  <pre className="code-terminal" style={{ marginTop: "0.5rem", padding: "0.5rem", fontSize: "0.75rem", overflowX: "auto" }}>
+                    {(diagnosis.matchingRunbook || diagnosis.analysis?.runbook).snippet}
+                  </pre>
+                )}
+              </div>
+            )}
 
             {/* Command / Patch to execute */}
             {diagnosis.analysis.remediationCommand && (

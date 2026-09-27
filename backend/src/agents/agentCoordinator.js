@@ -2,6 +2,7 @@ import { PlannerAgent } from "./plannerAgent.js";
 import { ExecutorAgent } from "./executorAgent.js";
 import { LogAnalyzerAgent } from "./logAnalyzerAgent.js";
 import { MonitoringAgent } from "./monitoringAgent.js";
+import { RAGAgent } from "./ragAgent.js";
 import { dbGet, dbRun } from "../database/db.js";
 import { recordAudit } from "../middleware/auditLogger.js";
 
@@ -20,8 +21,47 @@ export class AgentCoordinator {
       });
     }
 
-    // 1. Planner Agent creates DAG and evaluates Risk Level
-    const { requestId, taskId, plan, provider, latencyMs } = await PlannerAgent.createPlan(query, user);
+    // 1. Vector RAG Semantic Runbook Retrieval (384-dimensional dense embedding space)
+    let ragMatches = [];
+    let ragContext = "";
+    try {
+      if (io) {
+        io.emit("agent_thought", {
+          step: "RETRIEVING_RAG_RUNBOOKS",
+          message: `Querying 384-dim Vector Database for operational runbooks relevant to: "${query}"...`,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      const ragRes = await RAGAgent.searchKnowledge(query, { mode: "vector", limit: 2 });
+      ragMatches = (ragRes?.results || []).filter((r) => (r.similarityScore || 0) > 0.35);
+
+      if (ragMatches.length > 0) {
+        ragContext = ragMatches
+          .map(
+            (m, idx) =>
+              `[Runbook #${idx + 1}: ${m.title} (${m.matchPercentage || Math.round(m.similarityScore * 100) + "%"} match)]\n${m.summary}\n${m.content}${m.snippet ? `\nReference Snippet:\n${m.snippet}` : ""}`
+          )
+          .join("\n\n");
+
+        if (io) {
+          io.emit("agent_thought", {
+            step: "RAG_KNOWLEDGE_RETRIEVED",
+            message: `Retrieved ${ragMatches.length} matching runbooks from Vector DB (Top: "${ragMatches[0].title}", ${ragMatches[0].matchPercentage || Math.round(ragMatches[0].similarityScore * 100) + "%"}). Grounding execution plan.`,
+            runbooks: ragMatches.map((r) => ({ id: r.id, title: r.title, score: r.similarityScore })),
+            timestamp: new Date().toISOString()
+          });
+        }
+      }
+    } catch (ragErr) {
+      console.warn("⚠️ Vector RAG retrieval failed during planning:", ragErr.message);
+    }
+
+    // 2. Planner Agent creates DAG grounded in Vector RAG runbooks
+    const { requestId, taskId, plan, provider, latencyMs } = await PlannerAgent.createPlan(query, user, {
+      ragContext,
+      ragMatches
+    });
 
     if (io) {
       io.emit("agent_thought", {
@@ -52,6 +92,7 @@ export class AgentCoordinator {
         riskLevel: plan.riskLevel,
         approvalRequired: true,
         plan,
+        ragMatches,
         message: "Human authorization required before execution.",
         provider
       };
@@ -75,6 +116,7 @@ export class AgentCoordinator {
       riskLevel: plan.riskLevel,
       approvalRequired: false,
       plan,
+      ragMatches,
       execution: execResult,
       provider
     };

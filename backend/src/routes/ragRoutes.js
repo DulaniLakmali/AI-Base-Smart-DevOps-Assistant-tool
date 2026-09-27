@@ -45,5 +45,46 @@ export const createRAGRouter = () => {
     }
   });
 
+  // POST /api/rag/documents - Ingest and embed new runbook into Persistent Vector Database
+  router.post("/documents", checkPermission("write"), async (req, res) => {
+    try {
+      const { title, category, summary, content, tags, snippet, docUrl } = req.body;
+      if (!title || !content) {
+        return res.status(400).json({ error: "Title and content are required to index document" });
+      }
+
+      const indexed = await RAGAgent.addDoc({
+        title,
+        category: category || "DevOps Runbook",
+        summary: summary || title,
+        content,
+        tags: Array.isArray(tags) ? tags : (tags ? tags.split(",").map((t) => t.trim()) : []),
+        snippet: snippet || "",
+        docUrl: docUrl || ""
+      });
+
+      res.status(201).json({
+        message: "Document successfully embedded and persisted to Vector Database",
+        document: indexed
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // DELETE /api/rag/documents/:id - Remove document from Vector Database and embeddings
+  router.delete("/documents/:id", checkPermission("write"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = await RAGAgent.deleteDoc(id);
+      res.json({
+        message: `Document ${id} successfully deleted from Vector Database`,
+        ...result
+      });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   return router;
 };

@@ -128,5 +128,30 @@ export const initDB = async () => {
     );
   `);
 
+  // 7. Persistent Vector RAG Knowledge Base & Embeddings Store
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS rag_documents (
+      doc_id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      category TEXT NOT NULL,
+      tags TEXT,
+      summary TEXT,
+      content TEXT NOT NULL,
+      snippet TEXT,
+      doc_url TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS rag_embeddings (
+      doc_id TEXT PRIMARY KEY,
+      vector_dimension INTEGER NOT NULL,
+      embedding_json TEXT NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (doc_id) REFERENCES rag_documents(doc_id) ON DELETE CASCADE
+    );
+  `);
+
   console.log(" SQLite 3NF Database Schema initialized successfully.");
 };
