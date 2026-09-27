@@ -1,0 +1,33 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "Agentic AI-Powered Smart DevOps Assistant Backend",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "backend": "node src/index.js",
+    "seed": "node src/database/seed.js",
+    "test": "node tests/run_tests.js"
+  },
+  "keywords": [
+    "devops",
+    "agentic-ai",
+    "langchain",
+    "automation",
+    "kubernetes",
+    "docker"
+  ],
+  "author": "Horizon Campus DevOps Research Group",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.1",
+    "express": "^5.2.1",
+    "prom-client": "^15.1.3",
+    "socket.io": "^4.8.3",
+    "sqlite3": "^6.0.1"
+  }
+}
