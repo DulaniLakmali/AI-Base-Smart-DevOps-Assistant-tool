@@ -15,6 +15,7 @@ on:
 permissions:
   contents: read
   actions: read
+  packages: write
 
 jobs:
   continuous-integration:
@@ -34,40 +35,55 @@ jobs:
             backend/package-lock.json
             frontend/package-lock.json
 
-      - name: 3. Install Backend Dependencies
+      - name: 3. Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 4. Install Backend Dependencies
         run: npm --prefix backend ci
 
-      - name: 4. Run Evaluation Suite
+      - name: 5. Run Evaluation Suite
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm --prefix backend test
 
-      - name: 5. Install Frontend Dependencies
+      - name: 6. Install Frontend Dependencies
         run: npm --prefix frontend ci
 
-      - name: 6. Build Frontend Production Bundle
+      - name: 7. Build Frontend Production Bundle
         run: npm --prefix frontend run build
 
-      - name: 7. Validate Docker Compose
+      - name: 8. Validate Docker Compose
         run: docker compose config
 
-      - name: 8. Build Backend Docker Image
+      - name: 9. Build and Push Backend Docker Image
         run: |
           docker build \
-            -t smart-devops-backend:${{ github.sha }} \
+            -t ghcr.io/dulanilakmali/smart-devops-backend:${{ github.sha }} \
+            -t ghcr.io/dulanilakmali/smart-devops-backend:latest \
             ./backend
 
-      - name: 9. Build Frontend Docker Image
+          docker push ghcr.io/dulanilakmali/smart-devops-backend:${{ github.sha }}
+          docker push ghcr.io/dulanilakmali/smart-devops-backend:latest
+
+      - name: 10. Build and Push Frontend Docker Image
         run: |
           docker build \
-            -t smart-devops-frontend:${{ github.sha }} \
+            -t ghcr.io/dulanilakmali/smart-devops-frontend:${{ github.sha }} \
+            -t ghcr.io/dulanilakmali/smart-devops-frontend:latest \
             ./frontend
 
-      - name: 10. CI Verification Summary
+          docker push ghcr.io/dulanilakmali/smart-devops-frontend:${{ github.sha }}
+          docker push ghcr.io/dulanilakmali/smart-devops-frontend:latest
+
+      - name: 11. CI Verification Summary
         run: |
           echo "✅ Real CI pipeline completed successfully."
           echo "Repository: ${{ github.repository }}"
           echo "Branch: ${{ github.ref_name }}"
           echo "Commit: ${{ github.sha }}"
-          echo "Backend image: smart-devops-backend:${{ github.sha }}"
-          echo "Frontend image: smart-devops-frontend:${{ github.sha }}"
+          echo "Backend: ghcr.io/dulanilakmali/smart-devops-backend:${{ github.sha }}"
+          echo "Frontend: ghcr.io/dulanilakmali/smart-devops-frontend:${{ github.sha }}"
