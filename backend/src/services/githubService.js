@@ -7,9 +7,18 @@ import { config } from "../config/env.js";
  */
 
 let configuredToken = config.GITHUB_TOKEN || process.env.GITHUB_TOKEN || "";
-export const DEFAULT_OWNER = config.GITHUB_DEFAULT_OWNER || "DulaniLakmali";
-export const DEFAULT_REPO = config.GITHUB_DEFAULT_REPO || "AI-Base-Smart-DevOps-Assistant-tool";
-export const DEFAULT_BRANCH = config.GITHUB_DEFAULT_BRANCH || "master";
+export const DEFAULT_OWNER =
+  config.GITHUB_DEFAULT_OWNER || "DulaniLakmali";
+
+export const DEFAULT_REPO =
+  config.GITHUB_DEFAULT_REPO ||
+  "AI-Base-Smart-DevOps-Assistant-tool";
+
+export const DEFAULT_BRANCH =
+  config.GITHUB_DEFAULT_BRANCH || "master";
+
+export const DEFAULT_WORKFLOW_ID =
+  config.GITHUB_WORKFLOW_ID || "ci.yml";
 
 export class GitHubService {
   static setToken(token) {
@@ -22,12 +31,15 @@ export class GitHubService {
 
   static getHeaders(token) {
     const headers = {
-      Accept: "application/vnd.github.v3+json",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2026-03-10",
       "User-Agent": "Smart-DevOps-Assistant"
     };
+
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
+
     return headers;
   }
 
@@ -174,171 +186,262 @@ export class GitHubService {
   /**
    * Fetch GitHub Actions workflows
    */
-  static async getWorkflows(owner = DEFAULT_OWNER, repo = DEFAULT_REPO, reqToken) {
+  static async getWorkflows(
+    owner = DEFAULT_OWNER,
+    repo = DEFAULT_REPO,
+    reqToken
+  ) {
     const token = this.getToken(reqToken);
 
-    try {
-      const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/actions/workflows`, {
-        headers: this.getHeaders(token),
-        timeout: 8000
-      });
-
-      if (res.data?.workflows && res.data.workflows.length > 0) {
-        return res.data.workflows.map((w) => ({
-          id: w.id,
-          name: w.name,
-          path: w.path,
-          state: w.state,
-          htmlUrl: w.html_url
-        }));
-      }
-    } catch (err) {
-      console.warn("Live workflows fetch failed, falling back to simulated workflows:", err.message);
+    if (!token) {
+      throw new Error(
+        "GitHub token is not configured. Cannot retrieve real workflows."
+      );
     }
 
-    return [
-      { id: 365888512, name: "Smart DevOps Assistant CI/CD Pipeline", path: ".github/workflows/ci.yml", state: "active" },
-      { id: 362267851, name: "DevOps Assistant Deployment", path: ".github/workflows/deploy.yml", state: "active" }
-    ];
+    try {
+      const res = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows`,
+        {
+          headers: this.getHeaders(token),
+          timeout: 8000
+        }
+      );
+
+      return (res.data?.workflows || []).map((w) => ({
+        id: w.id,
+        name: w.name,
+        path: w.path,
+        state: w.state,
+        htmlUrl: w.html_url
+      }));
+    } catch (err) {
+      throw new Error(
+        `Failed to retrieve GitHub workflows: ${err.response?.data?.message || err.message
+        }`
+      );
+    }
   }
 
   /**
    * Fetch live GitHub Actions workflow runs
    */
-  static async getWorkflowRuns(owner = DEFAULT_OWNER, repo = DEFAULT_REPO, reqToken) {
+  static async getWorkflowRuns(
+    owner = DEFAULT_OWNER,
+    repo = DEFAULT_REPO,
+    reqToken
+  ) {
     const token = this.getToken(reqToken);
 
-    try {
-      const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/actions/runs?per_page=15`, {
-        headers: this.getHeaders(token),
-        timeout: 8000
-      });
-
-      if (res.data?.workflow_runs && Array.isArray(res.data.workflow_runs)) {
-        return {
-          isLive: true,
-          runs: res.data.workflow_runs.map((r) => ({
-            id: r.id,
-            name: r.name || "CI/CD Pipeline",
-            workflowId: r.workflow_id,
-            headBranch: r.head_branch || "main",
-            headSha: (r.head_sha || "").substring(0, 7),
-            displayTitle: r.display_title || r.head_commit?.message || "Autonomous pipeline run",
-            author: r.actor?.login || owner,
-            authorAvatar: r.actor?.avatar_url,
-            status: r.status, // "queued" | "in_progress" | "completed"
-            conclusion: r.conclusion, // "success" | "failure" | "cancelled" | null
-            createdAt: r.created_at,
-            updatedAt: r.updated_at,
-            runNumber: r.run_number,
-            htmlUrl: r.html_url,
-            event: r.event
-          }))
-        };
-      }
-    } catch (err) {
-      console.warn("Live workflow runs fetch failed, falling back to simulated runs:", err.message);
+    if (!token) {
+      throw new Error(
+        "GitHub token is not configured. Cannot retrieve real workflow runs."
+      );
     }
 
-    return {
-      isLive: false,
-      runs: []
-    };
+    try {
+      const res = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/actions/runs`,
+        {
+          headers: this.getHeaders(token),
+          params: {
+            per_page: 15
+          },
+          timeout: 8000
+        }
+      );
+
+      return {
+        isLive: true,
+
+        runs: (res.data?.workflow_runs || []).map((r) => ({
+          id: r.id,
+
+          name: r.name || "CI/CD Pipeline",
+
+          workflowId: r.workflow_id,
+
+          headBranch: r.head_branch || DEFAULT_BRANCH,
+
+          headSha: (r.head_sha || "").substring(0, 7),
+
+          displayTitle:
+            r.display_title ||
+            r.head_commit?.message ||
+            "Autonomous pipeline run",
+
+          author: r.actor?.login || owner,
+
+          authorAvatar: r.actor?.avatar_url,
+
+          status: r.status,
+
+          conclusion: r.conclusion,
+
+          createdAt: r.created_at,
+
+          updatedAt: r.updated_at,
+
+          runNumber: r.run_number,
+
+          htmlUrl: r.html_url,
+
+          event: r.event
+        }))
+      };
+    } catch (err) {
+      throw new Error(
+        `Failed to retrieve GitHub workflow runs: ${err.response?.data?.message || err.message
+        }`
+      );
+    }
   }
 
   /**
    * Fetch jobs and steps for a specific workflow run
    */
-  static async getRunJobs(owner = DEFAULT_OWNER, repo = DEFAULT_REPO, runId, reqToken) {
+  static async getRunJobs(
+    owner = DEFAULT_OWNER,
+    repo = DEFAULT_REPO,
+    runId,
+    reqToken
+  ) {
     const token = this.getToken(reqToken);
 
-    try {
-      const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/jobs`, {
-        headers: this.getHeaders(token),
-        timeout: 8000
-      });
-
-      if (res.data?.jobs && Array.isArray(res.data.jobs)) {
-        return res.data.jobs.map((j) => ({
-          id: j.id,
-          name: j.name,
-          status: j.status,
-          conclusion: j.conclusion,
-          startedAt: j.started_at,
-          completedAt: j.completed_at,
-          htmlUrl: j.html_url,
-          steps: (j.steps || []).map((s) => ({
-            name: s.name,
-            status: s.status,
-            conclusion: s.conclusion,
-            number: s.number,
-            startedAt: s.started_at,
-            completedAt: s.completed_at
-          }))
-        }));
-      }
-    } catch (err) {
-      console.warn(`Failed to fetch jobs for run ${runId}:`, err.message);
+    if (!token) {
+      throw new Error(
+        "GitHub token is not configured. Cannot retrieve workflow jobs."
+      );
     }
 
-    return [];
+    if (!runId) {
+      throw new Error("GitHub workflow run ID is required.");
+    }
+
+    try {
+      const res = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/jobs`,
+        {
+          headers: this.getHeaders(token),
+          timeout: 8000
+        }
+      );
+
+      return (res.data?.jobs || []).map((j) => ({
+        id: j.id,
+        name: j.name,
+        status: j.status,
+        conclusion: j.conclusion,
+        startedAt: j.started_at,
+        completedAt: j.completed_at,
+        htmlUrl: j.html_url,
+
+        steps: (j.steps || []).map((s) => ({
+          name: s.name,
+          status: s.status,
+          conclusion: s.conclusion,
+          number: s.number,
+          startedAt: s.started_at,
+          completedAt: s.completed_at
+        }))
+      }));
+    } catch (err) {
+      throw new Error(
+        `Failed to retrieve jobs for GitHub run ${runId}: ${err.response?.data?.message || err.message
+        }`
+      );
+    }
   }
 
   /**
    * Fetch raw logs for a specific job from GitHub runner
    */
-  static async getJobLogs(owner = DEFAULT_OWNER, repo = DEFAULT_REPO, jobId, reqToken) {
+  static async getJobLogs(
+    owner = DEFAULT_OWNER,
+    repo = DEFAULT_REPO,
+    jobId,
+    reqToken
+  ) {
     const token = this.getToken(reqToken);
 
-    try {
-      const res = await axios.get(`https://api.github.com/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`, {
-        headers: this.getHeaders(token),
-        responseType: "text",
-        timeout: 10000
-      });
+    if (!token) {
+      throw new Error(
+        "GitHub token is not configured. Cannot retrieve runner logs."
+      );
+    }
 
-      return res.data || "No logs available for this job.";
+    if (!jobId) {
+      throw new Error("GitHub job ID is required.");
+    }
+
+    try {
+      const res = await axios.get(
+        `https://api.github.com/repos/${owner}/${repo}/actions/jobs/${jobId}/logs`,
+        {
+          headers: this.getHeaders(token),
+          responseType: "text",
+          timeout: 10000
+        }
+      );
+
+      return res.data || "No logs are available for this job.";
     } catch (err) {
-      return `Unable to retrieve runner logs: ${err.response?.data?.message || err.message}`;
+      throw new Error(
+        `Failed to retrieve GitHub runner logs for job ${jobId}: ${err.response?.data?.message || err.message
+        }`
+      );
     }
   }
 
   /**
    * Trigger real GitHub Actions workflow dispatch
    */
-  static async triggerWorkflowDispatch(owner = DEFAULT_OWNER, repo = DEFAULT_REPO, workflowId, ref = "main", reqToken) {
+  static async triggerWorkflowDispatch(
+    owner = DEFAULT_OWNER,
+    repo = DEFAULT_REPO,
+    workflowId = DEFAULT_WORKFLOW_ID,
+    ref = DEFAULT_BRANCH,
+    reqToken,
+    inputs = {}
+  ) {
     const token = this.getToken(reqToken);
 
-    if (token) {
-      try {
-        await axios.post(
-          `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`,
-          { ref },
-          { headers: this.getHeaders(token) }
-        );
-
-        return {
-          success: true,
-          isLive: true,
-          owner,
-          repo,
-          ref,
-          workflowId,
-          message: `Successfully triggered GitHub Actions workflow dispatch on '${owner}/${repo}' [branch: '${ref}'].`
-        };
-      } catch (err) {
-        return {
-          success: false,
-          isLive: true,
-          message: `GitHub API error: ${err.response?.data?.message || err.message}`
-        };
-      }
+    if (!token) {
+      throw new Error(
+        "GitHub token is not configured. Cannot trigger a real GitHub Actions workflow."
+      );
     }
 
-    return {
-      success: true,
-      isLive: false,
-      message: `Workflow #${workflowId} triggered successfully in sandbox mode.`
-    };
+    try {
+      const res = await axios.post(
+        `https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflowId}/dispatches`,
+        {
+          ref,
+          inputs
+        },
+        {
+          headers: this.getHeaders(token),
+          timeout: 10000
+        }
+      );
+
+      return {
+        success: true,
+        isLive: true,
+        owner,
+        repo,
+        ref,
+        workflowId,
+        runId: res.data?.workflow_run_id || null,
+        runUrl: res.data?.run_url || null,
+        htmlUrl: res.data?.html_url || null,
+        message: "GitHub Actions workflow dispatched successfully."
+      };
+    } catch (err) {
+      throw new Error(
+        `GitHub Actions workflow dispatch failed: ${err.response?.data?.message || err.message
+        }`
+      );
+    }
   }
 }

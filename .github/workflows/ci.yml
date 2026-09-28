@@ -2,53 +2,72 @@ name: Smart DevOps Assistant CI/CD Pipeline
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches:
+      - master
+
   workflow_dispatch:
     inputs:
       environment:
         description: "Target deployment environment"
         required: false
-        default: "production"
+        default: "staging"
+
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   continuous-integration:
-    name: "Autonomous CI/CD Pipeline"
+    name: Real Autonomous CI Pipeline
     runs-on: ubuntu-latest
 
     steps:
-      - name: "1. Code Checkout"
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: "2. Set up Node.js Runtime"
+      - name: 2. Setup Node.js 22
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
-      - name: "3. Install Backend Dependencies"
-        run: |
-          echo "📦 Installing backend packages and prom-client..."
-          npm --prefix backend install
+      - name: 3. Install Backend Dependencies
+        run: npm --prefix backend ci
 
-      - name: "4. Run Evaluation Benchmark Tests (TC001-TC009)"
-        run: |
-          echo "🧪 Running Chapter 6 Test Suite (TC001-TC009)..."
-          npm --prefix backend test
+      - name: 4. Run Evaluation Suite
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm --prefix backend test
 
-      - name: "5. Install Frontend Dependencies"
-        run: |
-          echo "📦 Installing frontend packages..."
-          npm --prefix frontend install
+      - name: 5. Install Frontend Dependencies
+        run: npm --prefix frontend ci
 
-      - name: "6. Build Frontend Production Bundle"
-        run: |
-          echo "⚡ Building Vite client application..."
-          npm --prefix frontend run build
+      - name: 6. Build Frontend Production Bundle
+        run: npm --prefix frontend run build
 
-      - name: "7. Container & DevSecOps Validation"
-        run: |
-          echo "🛡️ Validating Docker Compose and Kubernetes manifests..."
-          node -e "console.log('✅ Container definitions and monitoring configurations verified.');"
+      - name: 7. Validate Docker Compose
+        run: docker compose config
 
-      - name: "8. Pipeline Success Notification"
+      - name: 8. Build Backend Docker Image
         run: |
-          echo "🎉 CI/CD Pipeline completed successfully. Build artifacts ready for rollout."
+          docker build \
+            -t smart-devops-backend:${{ github.sha }} \
+            ./backend
+
+      - name: 9. Build Frontend Docker Image
+        run: |
+          docker build \
+            -t smart-devops-frontend:${{ github.sha }} \
+            ./frontend
+
+      - name: 10. CI Verification Summary
+        run: |
+          echo "✅ Real CI pipeline completed successfully."
+          echo "Repository: ${{ github.repository }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Backend image: smart-devops-backend:${{ github.sha }}"
+          echo "Frontend image: smart-devops-frontend:${{ github.sha }}"

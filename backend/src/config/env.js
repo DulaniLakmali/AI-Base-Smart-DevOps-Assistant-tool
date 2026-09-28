@@ -12,35 +12,55 @@ export const config = {
   PORT: process.env.PORT || 5000,
   CLIENT_ORIGIN: process.env.CLIENT_ORIGIN || "http://localhost:5173",
   NODE_ENV: process.env.NODE_ENV || "development",
-  
+
   // AI Provider Keys
   GROQ_API_KEY: process.env.GROQ_API_KEY || "",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
   DEFAULT_MODEL: process.env.DEFAULT_MODEL || "llama-3.3-70b-versatile",
-  
+
   // Database Path
-  DB_PATH: process.env.DB_PATH || path.resolve(__dirname, "../../devops_assistant.sqlite"),
-  
+  DB_PATH:
+    process.env.DB_PATH ||
+    path.resolve(__dirname, "../../devops_assistant.sqlite"),
+
   // GitHub Integration
   GITHUB_TOKEN: process.env.GITHUB_TOKEN || "",
-  GITHUB_DEFAULT_OWNER: process.env.GITHUB_DEFAULT_OWNER || "DulaniLakmali",
-  GITHUB_DEFAULT_REPO: process.env.GITHUB_DEFAULT_REPO || "AI-Base-Smart-DevOps-Assistant-tool",
-  GITHUB_DEFAULT_BRANCH: process.env.GITHUB_DEFAULT_BRANCH || "master",
+  GITHUB_DEFAULT_OWNER:
+    process.env.GITHUB_DEFAULT_OWNER || "DulaniLakmali",
+  GITHUB_DEFAULT_REPO:
+    process.env.GITHUB_DEFAULT_REPO ||
+    "AI-Base-Smart-DevOps-Assistant-tool",
+  GITHUB_DEFAULT_BRANCH:
+    process.env.GITHUB_DEFAULT_BRANCH || "master",
+  GITHUB_WORKFLOW_ID:
+    process.env.GITHUB_WORKFLOW_ID || "ci.yml",
 
-  // Vector Database (Pinecone & Local SQLite Vector Store)
+  // Vector Database
   PINECONE_API_KEY: process.env.PINECONE_API_KEY || "",
   PINECONE_INDEX: process.env.PINECONE_INDEX || "devops-rag-kb",
-  
-  // Thresholds (from Chapter 3 constraints)
+
+  // Thresholds
   THRESHOLDS: {
-    CPU_WARNING: 85,    // CPU > 85%
-    MEMORY_WARNING: 80, // Memory > 80%
+    CPU_WARNING: 85,
+    MEMORY_WARNING: 80,
     DISK_WARNING: 90
   },
-  
+
   // High-Risk Commands requiring Human-In-The-Loop Approval
   HIGH_RISK_KEYWORDS: [
-    "delete", "destroy", "stop", "terminate", "reboot", "restart", "prune",
-    "drop", "truncate", "kill", "purge", "scale to 0", "production", "prod"
+    "delete",
+    "destroy",
+    "stop",
+    "terminate",
+    "reboot",
+    "restart",
+    "prune",
+    "drop",
+    "truncate",
+    "kill",
+    "purge",
+    "scale to 0",
+    "production",
+    "prod"
   ]
 };

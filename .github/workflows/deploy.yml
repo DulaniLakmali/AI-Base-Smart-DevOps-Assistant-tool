@@ -1,8 +1,6 @@
 name: Deploy Smart DevOps Assistant
 
 on:
-  push:
-    branches: [ "main", "master" ]
   workflow_dispatch:
     inputs:
       environment:
