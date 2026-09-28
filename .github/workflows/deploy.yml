@@ -2,49 +2,106 @@ name: Deploy Smart DevOps Assistant
 
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: "Target deployment environment"
-        required: false
-        default: "production"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smart-devops-minikube-deployment
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    name: "Production Deployment Pipeline"
-    runs-on: ubuntu-latest
+    name: Deploy to Minikube
+    runs-on: [self-hosted, windows, x64]
 
     steps:
-      - name: "1. Code Checkout"
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
-      - name: "2. Set up Node.js Environment"
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: "3. Install Dependencies"
+      - name: 2. Verify Kubernetes Connection
+        shell: powershell
         run: |
-          npm --prefix backend install
-          npm --prefix frontend install
+          $context = kubectl config current-context
+          Write-Host "Kubernetes context: $context"
 
-      - name: "4. Run System Benchmark Tests (TC001-TC009)"
-        run: |
-          npm --prefix backend test
+          if ($context -ne "minikube") {
+            throw "Expected Kubernetes context 'minikube', but found '$context'"
+          }
 
-      - name: "5. Build Frontend Production Bundle"
-        run: |
-          npm --prefix frontend run build
+          kubectl get nodes
 
-      - name: "6. Container Image Build Verification"
+      - name: 3. Create Namespace
+        shell: powershell
         run: |
-          echo "Building container artifacts for smart-devops..."
-          node -e "console.log('Container build validation succeeded');"
+          kubectl apply -f k8s/namespace.yml
 
-      - name: "7. Kubernetes Manifest Validation"
+      - name: 4. Verify Backend Secret
+        shell: powershell
         run: |
-          echo "Validating Kubernetes deployment manifests..."
-          node -e "console.log('Kubernetes manifests verified for production');"
+          kubectl get secret backend-secrets -n smart-devops
 
-      - name: "8. Production Release Complete"
+          if ($LASTEXITCODE -ne 0) {
+            throw "backend-secrets does not exist in namespace smart-devops"
+          }
+
+          Write-Host "Backend Kubernetes secret verified."
+
+      - name: 5. Validate Kubernetes Manifests
+        shell: powershell
         run: |
-          echo "Release deployed successfully."
+          kubectl apply --dry-run=client -f k8s/
+
+      - name: 6. Apply Kubernetes Manifests
+        shell: powershell
+        run: |
+          kubectl apply -f k8s/
+
+      - name: 7. Deploy Exact Backend Image
+        shell: powershell
+        run: |
+          kubectl set image deployment/backend `
+            backend=ghcr.io/dulanilakmali/smart-devops-backend:${{ github.sha }} `
+            -n smart-devops
+
+      - name: 8. Deploy Exact Frontend Image
+        shell: powershell
+        run: |
+          kubectl set image deployment/frontend `
+            frontend=ghcr.io/dulanilakmali/smart-devops-frontend:${{ github.sha }} `
+            -n smart-devops
+
+      - name: 9. Wait for Backend Rollout
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/backend `
+            -n smart-devops `
+            --timeout=180s
+
+      - name: 10. Wait for Frontend Rollout
+        shell: powershell
+        run: |
+          kubectl rollout status deployment/frontend `
+            -n smart-devops `
+            --timeout=180s
+
+      - name: 11. Verify Backend Health
+        shell: powershell
+        run: |
+          kubectl exec -n smart-devops deployment/backend -- `
+            node -e "fetch('http://127.0.0.1:5000/api/health').then(r=>r.json()).then(d=>{console.log(JSON.stringify(d));if(d.status!=='HEALTHY')process.exit(1)}).catch(e=>{console.error(e);process.exit(1)})"
+
+      - name: 12. Verify Kubernetes Deployment
+        shell: powershell
+        run: |
+          Write-Host "=========================================="
+          Write-Host "Smart DevOps Assistant Deployment"
+          Write-Host "=========================================="
+          Write-Host "Commit: ${{ github.sha }}"
+          Write-Host ""
+          kubectl get deployments -n smart-devops
+          kubectl get pods -n smart-devops
+          kubectl get services -n smart-devops
+          kubectl get pvc -n smart-devops
+          Write-Host ""
+          Write-Host "Deployment completed successfully."
