@@ -1,7 +1,16 @@
 name: Deploy Smart DevOps Assistant
 
 on:
+  workflow_run:
+    workflows:
+      - "Smart DevOps Assistant CI/CD Pipeline"
+    types:
+      - completed
+
   workflow_dispatch:
+
+env:
+  DEPLOY_SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
 permissions:
   contents: read
@@ -12,17 +21,33 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master') }}
+
     name: Deploy to Minikube
     runs-on: [self-hosted, windows, x64]
 
     steps:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
 
-      - name: 2. Verify Kubernetes Connection
+      - name: 2. Show Deployment Information
+        shell: powershell
+        run: |
+          Write-Host "=========================================="
+          Write-Host "Smart DevOps Assistant CD"
+          Write-Host "=========================================="
+          Write-Host "Event: ${{ github.event_name }}"
+          Write-Host "Deploy SHA: $env:DEPLOY_SHA"
+          Write-Host "Target branch: master"
+          Write-Host "=========================================="
+
+      - name: 3. Verify Kubernetes Connection
         shell: powershell
         run: |
           $context = kubectl config current-context
+
           Write-Host "Kubernetes context: $context"
 
           if ($context -ne "minikube") {
@@ -31,12 +56,12 @@ jobs:
 
           kubectl get nodes
 
-      - name: 3. Create Namespace
+      - name: 4. Create Namespace
         shell: powershell
         run: |
           kubectl apply -f k8s/namespace.yml
 
-      - name: 4. Verify Backend Secret
+      - name: 5. Verify Backend Secret
         shell: powershell
         run: |
           kubectl get secret backend-secrets -n smart-devops
@@ -47,61 +72,97 @@ jobs:
 
           Write-Host "Backend Kubernetes secret verified."
 
-      - name: 5. Validate Kubernetes Manifests
+      - name: 6. Validate Kubernetes Manifests
         shell: powershell
         run: |
           kubectl apply --dry-run=client -f k8s/
 
-      - name: 6. Apply Kubernetes Manifests
+      - name: 7. Apply Kubernetes Manifests
         shell: powershell
         run: |
           kubectl apply -f k8s/
 
-      - name: 7. Deploy Exact Backend Image
+      - name: 8. Deploy Exact Backend Image
         shell: powershell
         run: |
+          Write-Host "Deploying backend image:"
+          Write-Host "ghcr.io/dulanilakmali/smart-devops-backend:$env:DEPLOY_SHA"
+
           kubectl set image deployment/backend `
-            backend=ghcr.io/dulanilakmali/smart-devops-backend:${{ github.sha }} `
+            backend=ghcr.io/dulanilakmali/smart-devops-backend:$env:DEPLOY_SHA `
             -n smart-devops
 
-      - name: 8. Deploy Exact Frontend Image
+      - name: 9. Deploy Exact Frontend Image
         shell: powershell
         run: |
+          Write-Host "Deploying frontend image:"
+          Write-Host "ghcr.io/dulanilakmali/smart-devops-frontend:$env:DEPLOY_SHA"
+
           kubectl set image deployment/frontend `
-            frontend=ghcr.io/dulanilakmali/smart-devops-frontend:${{ github.sha }} `
+            frontend=ghcr.io/dulanilakmali/smart-devops-frontend:$env:DEPLOY_SHA `
             -n smart-devops
 
-      - name: 9. Wait for Backend Rollout
+      - name: 10. Wait for Backend Rollout
         shell: powershell
         run: |
           kubectl rollout status deployment/backend `
             -n smart-devops `
             --timeout=180s
 
-      - name: 10. Wait for Frontend Rollout
+      - name: 11. Wait for Frontend Rollout
         shell: powershell
         run: |
           kubectl rollout status deployment/frontend `
             -n smart-devops `
             --timeout=180s
 
-      - name: 11. Verify Backend Health
+      - name: 12. Verify Backend Health
         shell: powershell
         run: |
           kubectl exec -n smart-devops deployment/backend -- `
             node -e "fetch('http://127.0.0.1:5000/api/health').then(r=>r.json()).then(d=>{console.log(JSON.stringify(d));if(d.status!=='HEALTHY')process.exit(1)}).catch(e=>{console.error(e);process.exit(1)})"
 
-      - name: 12. Verify Kubernetes Deployment
+      - name: 13. Verify Deployed Images
+        shell: powershell
+        run: |
+          Write-Host "Backend image:"
+          kubectl get deployment backend `
+            -n smart-devops `
+            -o jsonpath="{.spec.template.spec.containers[0].image}"
+
+          Write-Host ""
+          Write-Host "Frontend image:"
+          kubectl get deployment frontend `
+            -n smart-devops `
+            -o jsonpath="{.spec.template.spec.containers[0].image}"
+
+          Write-Host ""
+
+      - name: 14. Verify Kubernetes Deployment
         shell: powershell
         run: |
           Write-Host "=========================================="
           Write-Host "Smart DevOps Assistant Deployment"
           Write-Host "=========================================="
-          Write-Host "Commit: ${{ github.sha }}"
+          Write-Host "Deployed CI commit: $env:DEPLOY_SHA"
           Write-Host ""
+
+          Write-Host "Deployments:"
           kubectl get deployments -n smart-devops
-          kubectl get pods -n smart-devops
-          kubectl get services -n smart-devops
-          kubectl get pvc -n smart-devops
+
           Write-Host ""
+          Write-Host "Pods:"
+          kubectl get pods -n smart-devops
+
+          Write-Host ""
+          Write-Host "Services:"
+          kubectl get services -n smart-devops
+
+          Write-Host ""
+          Write-Host "Persistent Volumes:"
+          kubectl get pvc -n smart-devops
+
+          Write-Host ""
+          Write-Host "=========================================="
           Write-Host "Deployment completed successfully."
+          Write-Host "=========================================="
