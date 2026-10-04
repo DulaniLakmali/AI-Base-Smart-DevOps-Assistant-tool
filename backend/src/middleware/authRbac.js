@@ -1,3 +1,4 @@
+// backend\src\middleware\authRbac.js
 import { dbGet } from "../database/db.js";
 
 /**

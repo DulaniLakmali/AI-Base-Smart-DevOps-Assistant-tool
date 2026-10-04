@@ -106,9 +106,19 @@ setInterval(async () => {
 const startServer = async () => {
   try {
     await seedDatabase();
+
     server.listen(config.PORT, () => {
       console.log(`====================================================`);
       console.log(`🚀 Smart DevOps Assistant API running on port ${config.PORT}`);
+
+      console.log(
+        `🤖 Groq LLM: ${config.GROQ_API_KEY ? "CONFIGURED" : "NOT CONFIGURED"}`
+      );
+
+      console.log(
+        `🧠 OpenAI LLM: ${config.OPENAI_API_KEY ? "CONFIGURED" : "NOT CONFIGURED"}`
+      );
+
       console.log(`📡 WebSocket server initialized and streaming events`);
       console.log(`⚡ API Health: http://localhost:${config.PORT}/api/health`);
       console.log(`====================================================`);

@@ -303,8 +303,22 @@ export default function PipelineVisualizerView() {
 
   };
 
+  const hasRunningCI = pipelines.some(
+    (pipeline) =>
+      pipeline.name === "Smart DevOps Assistant CI/CD Pipeline" &&
+      (
+        pipeline.status === "running" ||
+        pipeline.rawStatus === "queued" ||
+        pipeline.rawStatus === "in_progress"
+      )
+  );
+
 
   const handleTrigger = async () => {
+    if (isTriggering || hasRunningCI) {
+      return;
+    }
+
     setIsTriggering(true);
 
     try {
@@ -678,7 +692,7 @@ export default function PipelineVisualizerView() {
 
               onClick={handleTrigger}
 
-              disabled={isTriggering}
+              disabled={isTriggering || hasRunningCI}
 
               style={{ width: "100%", padding: "0.45rem", fontSize: "0.78rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem" }}
 
@@ -686,7 +700,13 @@ export default function PipelineVisualizerView() {
 
               {isTriggering ? <Loader2 size={14} className="spinning" /> : <Play size={14} />}
 
-              <span>{isTriggering ? "Dispatching Build..." : "Dispatch Real GitHub Build"}</span>
+              <span>
+                {isTriggering
+                  ? "Dispatching Build..."
+                  : hasRunningCI
+                    ? "CI Pipeline Running..."
+                    : "Dispatch Real GitHub Build"}
+              </span>
 
             </button>
 
@@ -945,17 +965,17 @@ export default function PipelineVisualizerView() {
 
                           border: `1px solid ${isRunning
 
-                              ? "var(--accent-cyan)"
+                            ? "var(--accent-cyan)"
 
-                              : isSuccess
+                            : isSuccess
 
-                                ? "rgba(16, 185, 129, 0.35)"
+                              ? "rgba(16, 185, 129, 0.35)"
 
-                                : isFailed
+                              : isFailed
 
-                                  ? "rgba(239, 68, 68, 0.35)"
+                                ? "rgba(239, 68, 68, 0.35)"
 
-                                  : "var(--border-subtle)"
+                                : "var(--border-subtle)"
 
                             }`,
 

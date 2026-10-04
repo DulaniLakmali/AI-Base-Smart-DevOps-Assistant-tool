@@ -1,25 +1,41 @@
 import axios from "axios";
 import { config } from "../config/env.js";
 
-/**
- * Unified LLM Provider Adapter
- * Supports Groq LPU, OpenAI, and a high-fidelity Offline DevOps Expert Engine.
- */
-
 export class LLMProvider {
-  static async complete({ systemPrompt, userPrompt, jsonMode = false }) {
-    // 1. Try Groq if configured
+  /**
+   * Main LLM completion method.
+   */
+  static async complete({
+    systemPrompt,
+    userPrompt,
+    jsonMode = false
+  }) {
+    // ============================================================
+    // 1. GROQ
+    // ============================================================
     if (config.GROQ_API_KEY) {
       try {
+        const startedAt = performance.now();
+
         const res = await axios.post(
           "https://api.groq.com/openai/v1/chat/completions",
           {
-            model: "llama-3.3-70b-versatile",
+            model: config.DEFAULT_MODEL,
             messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
+              {
+                role: "system",
+                content: systemPrompt
+              },
+              {
+                role: "user",
+                content: userPrompt
+              }
             ],
-            response_format: jsonMode ? { type: "json_object" } : undefined,
+
+            response_format: jsonMode
+              ? { type: "json_object" }
+              : undefined,
+
             temperature: 0.2
           },
           {
@@ -27,31 +43,81 @@ export class LLMProvider {
               Authorization: `Bearer ${config.GROQ_API_KEY}`,
               "Content-Type": "application/json"
             },
+
             timeout: 10000
           }
         );
+
+        const latencyMs = Number(
+          (performance.now() - startedAt).toFixed(2)
+        );
+
+        const model =
+          res.data?.model ||
+          config.DEFAULT_MODEL ||
+          "unknown";
+
+        const content =
+          res.data?.choices?.[0]?.message?.content;
+
+        if (!content) {
+          throw new Error(
+            "Groq returned an empty or invalid completion."
+          );
+        }
+
+        console.log(
+          `🤖 Groq response received | Model: ${model} | ${latencyMs} ms`
+        );
+
         return {
-          content: res.data.choices[0].message.content,
-          provider: "Groq (Llama-3.3)",
-          latencyMs: res.data.usage?.total_time || 450
+          content,
+          provider: `Groq (${model})`,
+          model,
+          latencyMs
         };
       } catch (err) {
-        console.warn("⚠️ Groq API failed or timed out, falling back to Intelligent Local Engine:", err.message);
+        console.error("❌ Groq API error:", {
+          status: err.response?.status,
+          message: err.message,
+          data: err.response?.data
+        });
+
+        console.warn(
+          "⚠️ Groq API unavailable. Trying next available provider..."
+        );
       }
     }
 
-    // 2. Try OpenAI if configured
+    // ============================================================
+    // 2. OPENAI
+    // ============================================================
     if (config.OPENAI_API_KEY) {
       try {
+        const startedAt = performance.now();
+
+        const openAIModel = "gpt-4o-mini";
+
         const res = await axios.post(
           "https://api.openai.com/v1/chat/completions",
           {
-            model: "gpt-4o-mini",
+            model: openAIModel,
+
             messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
+              {
+                role: "system",
+                content: systemPrompt
+              },
+              {
+                role: "user",
+                content: userPrompt
+              }
             ],
-            response_format: jsonMode ? { type: "json_object" } : undefined,
+
+            response_format: jsonMode
+              ? { type: "json_object" }
+              : undefined,
+
             temperature: 0.2
           },
           {
@@ -59,84 +125,403 @@ export class LLMProvider {
               Authorization: `Bearer ${config.OPENAI_API_KEY}`,
               "Content-Type": "application/json"
             },
+
             timeout: 10000
           }
         );
+
+        const latencyMs = Number(
+          (performance.now() - startedAt).toFixed(2)
+        );
+
+        const model =
+          res.data?.model ||
+          openAIModel;
+
+        const content =
+          res.data?.choices?.[0]?.message?.content;
+
+        if (!content) {
+          throw new Error(
+            "OpenAI returned an empty or invalid completion."
+          );
+        }
+
+        console.log(
+          `🤖 OpenAI response received | Model: ${model} | ${latencyMs} ms`
+        );
+
         return {
-          content: res.data.choices[0].message.content,
-          provider: "OpenAI (GPT-4o)",
-          latencyMs: 780
+          content,
+          provider: `OpenAI (${model})`,
+          model,
+          latencyMs
         };
       } catch (err) {
-        console.warn("⚠️ OpenAI API failed, falling back to Intelligent Local Engine:", err.message);
+        console.error("❌ OpenAI API error:", {
+          status: err.response?.status,
+          message: err.message,
+          data: err.response?.data
+        });
+
+        console.warn(
+          "⚠️ OpenAI API unavailable. Switching to Offline Agentic Core..."
+        );
       }
     }
 
-    // 3. High-fidelity Offline DevOps Knowledge & Reasoning Engine
+    // ============================================================
+    // 3. OFFLINE DEVOPS REASONING ENGINE
+    // ============================================================
+    const startedAt = performance.now();
+
+    const content = this.offlineReasoning(
+      userPrompt,
+      jsonMode
+    );
+
+    const latencyMs = Number(
+      (performance.now() - startedAt).toFixed(2)
+    );
+
+    console.warn(
+      `🧠 Using Offline Agentic Core | ${latencyMs} ms`
+    );
+
     return {
-      content: this.offlineReasoning(userPrompt, jsonMode),
-      provider: "Offline Agentic Core (Research Sandbox)",
-      latencyMs: 120
+      content,
+      provider:
+        "Offline Agentic Core (Research Sandbox)",
+      model: "offline-devops-rule-engine",
+      latencyMs
     };
   }
 
-  static offlineReasoning(userPrompt, jsonMode) {
-    const p = userPrompt.toLowerCase();
+  static extractUserObjective(userPrompt) {
+    const text = String(userPrompt || "").trim();
 
-    // Query Plan Generation
-    if (p.includes("plan") || p.includes("deploy") || p.includes("scale") || p.includes("ci") || p.includes("pipeline") || p.includes("docker") || p.includes("k8s") || p.includes("terraform")) {
+    if (!text) {
+      return "";
+    }
+
+    const objectiveMatch = text.match(
+      /DevOps Objective:\s*"([^"]+)"/i
+    );
+
+    if (objectiveMatch?.[1]) {
+      return objectiveMatch[1].trim();
+    }
+
+    return text;
+  }
+
+  /**
+   * Offline DevOps Knowledge & Reasoning Engine.
+   *
+   * Used only when remote LLM providers are unavailable.
+   */
+  static offlineReasoning(userPrompt, jsonMode) {
+    const objective =
+      this.extractUserObjective(userPrompt);
+
+    const p = objective.toLowerCase();
+
+    // ============================================================
+    // INTENT DETECTION
+    // ============================================================
+
+    const isPlanningRequest =
+      /\bplan\b/i.test(objective) ||
+      /\bdeploy\b/i.test(objective) ||
+      /\bdeployment\b/i.test(objective) ||
+      /\bscale\b/i.test(objective) ||
+      /\brollback\b/i.test(objective) ||
+      /\bci\b/i.test(objective) ||
+      /\bpipeline\b/i.test(objective) ||
+      /\bdocker\b/i.test(objective) ||
+      /\bk8s\b/i.test(objective) ||
+      /\bkubernetes\b/i.test(objective) ||
+      /\bterraform\b/i.test(objective) ||
+      /\bgithub\b/i.test(objective) ||
+      /\bworkflow\b/i.test(objective) ||
+      /\bdispatch\b/i.test(objective);
+
+    // ============================================================
+    // PLAN GENERATION
+    // ============================================================
+
+    if (isPlanningRequest) {
       let riskLevel = "SAFE";
       let approvalRequired = false;
       let tasks = [];
       let summary = "";
 
-      if (p.includes("delete") || p.includes("destroy") || p.includes("stop") || p.includes("terminate") || p.includes("scale to 0") || p.includes("prod")) {
+      // ----------------------------------------------------------
+      // Risk classification
+      // ----------------------------------------------------------
+
+      const isProduction =
+        /\bprod\b/i.test(objective) ||
+        /\bproduction\b/i.test(objective);
+
+      const containsHighRiskOperation =
+        /\b(delete|destroy|stop|terminate|drop|truncate|kill|purge)\b/i.test(
+          objective
+        );
+
+      const scaleToZero =
+        /\bscale\s+(?:\S+\s+)*to\s+0\b/i.test(
+          objective
+        ) ||
+        /--replicas[=\s]+0\b/i.test(objective);
+
+      if (
+        containsHighRiskOperation ||
+        scaleToZero ||
+        isProduction
+      ) {
         riskLevel = "HIGH_RISK";
         approvalRequired = true;
-      } else if (p.includes("scale") || p.includes("deploy")) {
+      } else if (
+        /\bscale\b/i.test(objective) ||
+        /\bdeploy\b/i.test(objective) ||
+        /\bdeployment\b/i.test(objective) ||
+        /\brollback\b/i.test(objective)
+      ) {
         riskLevel = "MODERATE";
-        approvalRequired = p.includes("prod") || p.includes("production");
+
+        // Production actions always require approval.
+        approvalRequired = isProduction;
       }
 
-      if (p.includes("frontend to kubernetes") || (p.includes("deploy") && p.includes("frontend"))) {
-        summary = "Deploy frontend microservice container to Kubernetes cluster with 3 replicas and NodePort service.";
+      // ==========================================================
+      // FRONTEND → KUBERNETES DEPLOYMENT
+      // ==========================================================
+
+      if (
+        p.includes("frontend to kubernetes") ||
+        (
+          p.includes("deploy") &&
+          p.includes("frontend")
+        )
+      ) {
+        summary =
+          "Deploy frontend microservice container to Kubernetes cluster with 3 replicas and NodePort service.";
+
         tasks = [
-          { step: 1, action: "DOCKER_BUILD", command: "docker build -t frontend:v2.1 ./frontend", description: "Build production Vite React Docker image" },
-          { step: 2, action: "K8S_VALIDATE", command: "kubectl apply -f k8s/frontend-deployment.yaml --dry-run=client", description: "Validate Kubernetes manifest schema" },
-          { step: 3, action: "K8S_APPLY", command: "kubectl apply -f k8s/frontend-deployment.yaml", description: "Deploy deployment & service to Kubernetes namespace" },
-          { step: 4, action: "ROLLOUT_STATUS", command: "kubectl rollout status deployment/frontend-app", description: "Verify zero-downtime rolling update completion" }
-        ];
-      } else if (p.includes("run ci") || p.includes("trigger pipeline") || p.includes("ci pipeline") || p.includes("github") || p.includes("dispatch") || p.includes("workflow")) {
-        summary = "Dispatch GitHub Actions Continuous Integration pipeline to cloud runner with real-time polling.";
-        tasks = [
-          { step: 1, action: "GITHUB_VERIFY_REPO", command: "git remote -v && git branch --show-current", description: "Verify connected repository and target ref branch" },
-          { step: 2, action: "GITHUB_ACTIONS_DISPATCH", command: "gh workflow run ci.yml --ref main", description: "Dispatch GitHub Actions workflow via REST API and start telemetry poller" },
-          { step: 3, action: "POLL_RUN_STATUS", command: "gh run list --workflow=ci.yml --limit 1", description: "Monitor runner execution logs and job status" }
-        ];
-      } else if (p.includes("scale")) {
-        const targetReplicas = (p.match(/to (\d+)/) || [])[1] || "4";
-        summary = `Scale payment-service deployment to ${targetReplicas} replicas to handle traffic saturation.`;
-        tasks = [
-          { step: 1, action: "K8S_CHECK_METRICS", command: "kubectl top pods -l app=payment-service", description: "Inspect current CPU/Memory consumption" },
-          { step: 2, action: "K8S_SCALE", command: `kubectl scale deployment payment-service --replicas=${targetReplicas}`, description: `Update replica count to ${targetReplicas}` },
-          { step: 3, action: "K8S_VERIFY_HEALTH", command: "kubectl get pods -l app=payment-service -w", description: "Monitor pod readiness probes" }
-        ];
-      } else if (p.includes("rollback")) {
-        summary = "Execute automated rollback for failed deployment to previous stable revision.";
-        riskLevel = "MODERATE";
-        tasks = [
-          { step: 1, action: "K8S_HISTORY", command: "kubectl rollout history deployment/backend-api", description: "Retrieve revision history" },
-          { step: 2, action: "K8S_UNDO", command: "kubectl rollout undo deployment/backend-api", description: "Roll back to last known healthy replica set" },
-          { step: 3, action: "HEALTH_CHECK", command: "curl -f http://localhost:5000/api/health", description: "Verify HTTP 200 OK after rollback" }
-        ];
-      } else {
-        summary = `DevOps Automation Workflow for: "${userPrompt.slice(0, 50)}..."`;
-        tasks = [
-          { step: 1, action: "ENV_INSPECT", command: "docker ps --format 'table {{.Names}}\t{{.Status}}'", description: "Inspect active runtime environment" },
-          { step: 2, action: "CONFIG_GENERATE", command: "cat infra/config.yaml", description: "Synthesize target declarative configuration" },
-          { step: 3, action: "SAFE_APPLY", command: "echo 'Deployment executed successfully'", description: "Execute verified configuration" }
+          {
+            step: 1,
+            action: "DOCKER_BUILD",
+            command:
+              "docker build -t frontend:v2.1 ./frontend",
+            description:
+              "Build production Vite React Docker image"
+          },
+          {
+            step: 2,
+            action: "K8S_VALIDATE",
+            command:
+              "kubectl apply -f k8s/frontend-deployment.yaml --dry-run=client",
+            description:
+              "Validate Kubernetes manifest schema"
+          },
+          {
+            step: 3,
+            action: "K8S_APPLY",
+            command:
+              "kubectl apply -f k8s/frontend-deployment.yaml",
+            description:
+              "Deploy deployment and service to Kubernetes namespace"
+          },
+          {
+            step: 4,
+            action: "ROLLOUT_STATUS",
+            command:
+              "kubectl rollout status deployment/frontend-app",
+            description:
+              "Verify rolling update completion"
+          }
         ];
       }
+
+      // ==========================================================
+      // GITHUB ACTIONS / CI PIPELINE
+      // ==========================================================
+
+      else if (
+        p.includes("run ci") ||
+        p.includes("trigger pipeline") ||
+        p.includes("ci pipeline") ||
+        p.includes("github") ||
+        p.includes("dispatch") ||
+        p.includes("workflow")
+      ) {
+        const workflow =
+          config.GITHUB_WORKFLOW_ID ||
+          "ci.yml";
+
+        const branch =
+          config.GITHUB_DEFAULT_BRANCH ||
+          "main";
+
+        summary =
+          "Dispatch GitHub Actions Continuous Integration pipeline and monitor the workflow execution.";
+
+        tasks = [
+          {
+            step: 1,
+            action: "GITHUB_VERIFY_REPO",
+            command:
+              "git remote -v && git branch --show-current",
+            description:
+              "Verify connected repository and target branch"
+          },
+          {
+            step: 2,
+            action: "GITHUB_ACTIONS_DISPATCH",
+            command:
+              `gh workflow run ${workflow} --ref ${branch}`,
+            description:
+              `Dispatch GitHub Actions workflow ${workflow} on branch ${branch}`
+          },
+          {
+            step: 3,
+            action: "POLL_RUN_STATUS",
+            command:
+              `gh run list --workflow=${workflow} --limit 1`,
+            description:
+              "Monitor latest workflow execution status"
+          }
+        ];
+      }
+
+      // ==========================================================
+      // KUBERNETES SCALING
+      // ==========================================================
+
+      else if (p.includes("scale")) {
+        const targetReplicas =
+          (
+            p.match(
+              /\b(?:to|replicas?)\s*[=:]?\s*(\d+)\b/
+            ) || []
+          )[1] || "4";
+
+        summary =
+          `Scale payment-service deployment to ${targetReplicas} replicas to handle traffic demand.`;
+
+        tasks = [
+          {
+            step: 1,
+            action: "K8S_CHECK_METRICS",
+            command:
+              "kubectl top pods -l app=payment-service",
+            description:
+              "Inspect current CPU and memory consumption"
+          },
+          {
+            step: 2,
+            action: "K8S_SCALE",
+            command:
+              `kubectl scale deployment payment-service --replicas=${targetReplicas}`,
+            description:
+              `Update replica count to ${targetReplicas}`
+          },
+          {
+            step: 3,
+            action: "K8S_VERIFY_HEALTH",
+            command:
+              "kubectl get pods -l app=payment-service",
+            description:
+              "Verify pod readiness after scaling"
+          }
+        ];
+      }
+
+      // ==========================================================
+      // ROLLBACK
+      // ==========================================================
+
+      else if (p.includes("rollback")) {
+        summary =
+          "Execute rollback for the failed deployment to the previous stable revision.";
+
+        riskLevel = isProduction
+          ? "HIGH_RISK"
+          : "MODERATE";
+
+        approvalRequired = isProduction;
+
+        tasks = [
+          {
+            step: 1,
+            action: "K8S_HISTORY",
+            command:
+              "kubectl rollout history deployment/backend-api",
+            description:
+              "Retrieve deployment revision history"
+          },
+          {
+            step: 2,
+            action: "K8S_UNDO",
+            command:
+              "kubectl rollout undo deployment/backend-api",
+            description:
+              "Roll back to the previous deployment revision"
+          },
+          {
+            step: 3,
+            action: "HEALTH_CHECK",
+            command:
+              "curl -f http://localhost:5000/api/health",
+            description:
+              "Verify API health after rollback"
+          }
+        ];
+      }
+
+      // ==========================================================
+      // GENERIC DEVOPS PLAN
+      // ==========================================================
+
+      else {
+        summary =
+          `DevOps Automation Workflow for: "${objective.slice(
+            0,
+            80
+          )}${objective.length > 80 ? "..." : ""}"`;
+
+        tasks = [
+          {
+            step: 1,
+            action: "ENV_INSPECT",
+            command:
+              "docker ps --format 'table {{.Names}}\\t{{.Status}}'",
+            description:
+              "Inspect active runtime environment"
+          },
+          {
+            step: 2,
+            action: "CONFIG_INSPECT",
+            command:
+              "cat infra/config.yaml",
+            description:
+              "Inspect target declarative configuration"
+          },
+          {
+            step: 3,
+            action: "SAFE_APPLY",
+            command:
+              "echo 'Validated DevOps workflow ready for execution'",
+            description:
+              "Prepare validated workflow for execution"
+          }
+        ];
+      }
+
+      // ==========================================================
+      // RETURN STRUCTURED PLAN
+      // ==========================================================
 
       if (jsonMode) {
         return JSON.stringify({
@@ -144,22 +529,51 @@ export class LLMProvider {
           riskLevel,
           approvalRequired,
           tasks,
-          recommendedAction: approvalRequired ? "Review and approve high-risk action before execution" : "Proceed with automated execution"
+
+          recommendedAction:
+            approvalRequired
+              ? "Review and approve the requested action before execution"
+              : riskLevel === "MODERATE"
+                ? "Review the generated execution plan before applying infrastructure changes"
+                : "Proceed with validated automated execution"
         });
       }
+
       return summary;
     }
 
-    // Default conversational response
+    // ============================================================
+    // DEFAULT CONVERSATIONAL RESPONSE
+    // ============================================================
+
     if (jsonMode) {
       return JSON.stringify({
-        summary: "Analyzed request",
+        summary:
+          "Analyzed request. No infrastructure-changing operation was detected.",
         riskLevel: "SAFE",
         approvalRequired: false,
-        tasks: [{ step: 1, action: "INFO", command: "echo Ready", description: "DevOps Assistant is ready" }]
+
+        tasks: [
+          {
+            step: 1,
+            action: "INFO",
+            command: "echo Ready",
+            description:
+              "DevOps Assistant is ready"
+          }
+        ],
+
+        recommendedAction:
+          "No infrastructure-changing action required"
       });
     }
 
-    return `I am your Agentic Smart DevOps Assistant. I have analyzed your request: "${userPrompt}". I can help plan CI/CD deployments, analyze stack traces, provision Docker & Kubernetes workloads, and manage autoscaling with Human-In-The-Loop safety gates.`;
+    return (
+      `I am your Agentic Smart DevOps Assistant. ` +
+      `I analyzed your request: "${objective}". ` +
+      `I can help plan CI/CD deployments, analyze stack traces, ` +
+      `provision Docker and Kubernetes workloads, manage infrastructure, ` +
+      `and support Human-In-The-Loop safety gates.`
+    );
   }
 }

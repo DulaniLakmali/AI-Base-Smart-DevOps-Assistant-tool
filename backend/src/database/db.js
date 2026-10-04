@@ -1,3 +1,4 @@
+// backend\src\database\db.js
 import sqlite3 from "sqlite3";
 import { config } from "../config/env.js";
 
