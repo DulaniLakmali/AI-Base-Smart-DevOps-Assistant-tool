@@ -369,31 +369,29 @@ export default function Navbar({
           borderRadius: "var(--radius-md)",
           border: "1px solid var(--border-subtle)"
         }}>
-          <ShieldCheck size={16} color="var(--accent-indigo)" />
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: "0.65rem", color: "var(--text-secondary)", textTransform: "uppercase" }}>
-              Active RBAC Role
-            </span>
-            <select
-              value={currentUser?.user_id || 2}
-              onChange={(e) => onUserChange(parseInt(e.target.value, 10))}
-              style={{
-                background: "transparent",
-                color: "var(--text-primary)",
-                border: "none",
-                fontSize: "0.85rem",
-                fontWeight: 600,
-                cursor: "pointer",
-                outline: "none"
-              }}
-            >
-              {users.map((u) => (
-                <option key={u.user_id} value={u.user_id} style={{ background: "#0f172a", color: "#f8fafc" }}>
-                  {u.name} ({u.role.replace("_", " ")})
-                </option>
-              ))}
-            </select>
-          </div>
+  <ShieldCheck size={16} color="var(--accent-indigo)" />
+
+<div style={{ display: "flex", flexDirection: "column" }}>
+  <span
+    style={{
+      fontSize: "0.65rem",
+      color: "var(--text-secondary)",
+      textTransform: "uppercase",
+    }}
+  >
+    Active RBAC Role
+  </span>
+
+  <span
+    style={{
+      color: "var(--text-primary)",
+      fontSize: "0.85rem",
+      fontWeight: 600,
+    }}
+  >
+    Dulani Lakmali (itbin22110203)
+  </span>
+</div>
         </div>
       </div>
     </header>

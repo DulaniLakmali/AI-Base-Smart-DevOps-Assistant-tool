@@ -28,7 +28,6 @@ export default function Sidebar({ activeTab, setActiveTab }) {
     { id: "rag", label: "RAG Knowledge Base", icon: BookOpen, badge: "RAG" },
     { id: "infra", label: "Infrastructure Hub", icon: Boxes },
     { id: "metrics", label: "Metrics & Chaos Lab", icon: Activity },
-    { id: "audit", label: "Audit Ledger", icon: ShieldAlert },
     { id: "report", label: "Thesis Report & MTTR", icon: GraduationCap, badge: "DATA" }
   ];
 
