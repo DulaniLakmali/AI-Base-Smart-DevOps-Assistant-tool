@@ -151,6 +151,52 @@ export class GitHubService {
     };
   }
 
+  static async rerunFailedJobs(
+  owner = DEFAULT_OWNER,
+  repo = DEFAULT_REPO,
+  runId,
+  reqToken
+) {
+  const token = this.getToken(reqToken);
+
+  if (!token) {
+    throw new Error(
+      "GitHub token is not configured. Cannot retry pipeline."
+    );
+  }
+
+  if (!runId) {
+    throw new Error("Workflow run ID is required.");
+  }
+
+  try {
+    await axios.post(
+      `https://api.github.com/repos/${owner}/${repo}/actions/runs/${runId}/rerun-failed-jobs`,
+      {},
+      {
+        headers: this.getHeaders(token),
+        timeout: 10000
+      }
+    );
+
+    console.log(
+      `🔄 [CI Retry] Retry requested for GitHub run ${runId}`
+    );
+
+    return {
+      success: true,
+      runId: String(runId),
+      message: `Retry requested for GitHub Actions run ${runId}.`
+    };
+  } catch (err) {
+    throw new Error(
+      `Failed to retry GitHub Actions run: ${
+        err.response?.data?.message || err.message
+      }`
+    );
+  }
+}
+
   /**
    * Fetch recent commits for a repository
    */
