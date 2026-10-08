@@ -84,6 +84,33 @@ export const createDevOpsRouter = (io) => {
     }
   });
 
+  router.post(
+  "/ci/runs/:runId/retry",
+  checkPermission("trigger_ci"),
+  async (req, res) => {
+    try {
+      const { owner, repo } = req.body;
+      const reqToken =
+        req.headers["x-github-token"] || null;
+
+      const result =
+        await CIService.retryFailedPipeline(
+          req.params.runId,
+          io,
+          reqToken,
+          owner,
+          repo
+        );
+
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        error: err.message
+      });
+    }
+  }
+);
+
   router.post("/ci/trigger", checkPermission("trigger_ci"), async (req, res) => {
     try {
       const {

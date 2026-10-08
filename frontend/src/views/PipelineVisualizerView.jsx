@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 
 import { api, socket } from "../api/client";
+import PipelineRetryModal from "../components/PipelineRetryModal";
 
 import {
 
@@ -58,6 +59,9 @@ export default function PipelineVisualizerView() {
 
   const [activeRepo, setActiveRepo] = useState("AI-Base-Smart-DevOps-Assistant-tool");
 
+  const [retryPipeline, setRetryPipeline] = useState(null);
+const [isRetrying, setIsRetrying] = useState(false);
+
 
   useEffect(() => {
 
@@ -89,6 +93,23 @@ export default function PipelineVisualizerView() {
     };
 
     loadConfig();
+
+    const handlePipelineCompleted = (result) => {
+  const failed =
+    result.status === "failed" ||
+    result.conclusion === "failure";
+
+  if (!failed) {
+    return;
+  }
+
+  setRetryPipeline(result);
+};
+
+socket.on(
+  "ci_pipeline_completed",
+  handlePipelineCompleted
+);
 
 
     const handlePipelineUpdate = (updatedPipeline) => {
@@ -153,7 +174,17 @@ export default function PipelineVisualizerView() {
 
     socket.on("ci_pipeline_update", handlePipelineUpdate);
 
-    return () => socket.off("ci_pipeline_update", handlePipelineUpdate);
+    return () => {
+  socket.off(
+    "ci_pipeline_update",
+    handlePipelineUpdate
+  );
+
+  socket.off(
+    "ci_pipeline_completed",
+    handlePipelineCompleted
+  );
+};
 
   }, []);
 
@@ -251,6 +282,42 @@ export default function PipelineVisualizerView() {
       );
     }
   };
+
+  const handleRetryFailedPipeline = async () => {
+  if (!retryPipeline || isRetrying) return;
+
+  setIsRetrying(true);
+
+  try {
+    await api.post(
+      `/devops/ci/runs/${retryPipeline.id}/retry`,
+      {
+        owner:
+          retryPipeline.owner || activeOwner,
+        repo:
+          retryPipeline.repo || activeRepo
+      }
+    );
+
+    setRetryPipeline(null);
+
+    await fetchPipelines(
+      activeOwner,
+      activeRepo,
+      true
+    );
+  } catch (err) {
+    alert(
+      "Unable to retry pipeline: " +
+        (
+          err.response?.data?.error ||
+          err.message
+        )
+    );
+  } finally {
+    setIsRetrying(false);
+  }
+};
 
 
   const fetchRunJobs = async (pipeline) => {
@@ -1167,8 +1234,15 @@ export default function PipelineVisualizerView() {
         </div>
 
       </div>
+      <PipelineRetryModal
+  pipeline={retryPipeline}
+  isRetrying={isRetrying}
+  onRetry={handleRetryFailedPipeline}
+  onCancel={() => setRetryPipeline(null)}
+/>
 
     </div>
+    
 
   );
 

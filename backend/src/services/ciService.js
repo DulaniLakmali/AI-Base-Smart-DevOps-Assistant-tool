@@ -219,6 +219,54 @@ export class CIService {
     };
   }
 
+  static async retryFailedPipeline(
+  runId,
+  io = null,
+  reqToken = null,
+  owner = DEFAULT_OWNER,
+  repo = DEFAULT_REPO
+) {
+  if (!runId) {
+    throw new Error("Workflow run ID is required.");
+  }
+
+  const token = GitHubService.getToken(reqToken);
+
+  const result = await GitHubService.rerunFailedJobs(
+    owner,
+    repo,
+    runId,
+    token
+  );
+
+  const pipeline = trackedPipelines.get(String(runId));
+
+  if (pipeline) {
+    pipeline.status = "running";
+    pipeline.rawStatus = "queued";
+    pipeline.rawConclusion = null;
+    pipeline.duration = "Retry requested...";
+
+    trackedPipelines.set(String(runId), pipeline);
+
+    if (io) {
+      io.emit("ci_pipeline_update", {
+        ...pipeline
+      });
+    }
+
+    this.startGitHubRunPoller(
+      pipeline,
+      owner,
+      repo,
+      token,
+      io
+    );
+  }
+
+  return result;
+}
+
   /**
    * Fetch real runner logs.
    */
@@ -578,24 +626,18 @@ export class CIService {
               );
 
               io.emit(
-                "ci_pipeline_completed",
-                {
-                  id:
-                    livePipeline.id,
-
-                  runNumber:
-                    livePipeline.runNumber,
-
-                  status:
-                    livePipeline.status,
-
-                  conclusion:
-                    livePipeline.rawConclusion,
-
-                  htmlUrl:
-                    livePipeline.htmlUrl
-                }
-              );
+  "ci_pipeline_completed",
+  {
+    id: livePipeline.id,
+    runNumber: livePipeline.runNumber,
+    status: livePipeline.status,
+    conclusion: livePipeline.rawConclusion,
+    htmlUrl: livePipeline.htmlUrl,
+    branch: livePipeline.branch,
+    owner: livePipeline.owner,
+    repo: livePipeline.repo
+  }
+);
             }
 
             console.log(
