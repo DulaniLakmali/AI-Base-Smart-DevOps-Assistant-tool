@@ -26,6 +26,20 @@ jobs:
       - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
+      # ==========================================================
+      # TEMPORARY TEST STEP
+      # This intentionally fails the pipeline so we can test
+      # the Human-in-the-Loop retry popup in the frontend.
+      # REMOVE THIS STEP AFTER TESTING.
+      # ==========================================================
+      - name: TEMP - Force Pipeline Failure
+        run: |
+          echo "=========================================="
+          echo "TEST: Forcing CI pipeline failure"
+          echo "Expected result: Retry popup in frontend"
+          echo "=========================================="
+          exit 1
+
       - name: 2. Setup Node.js 22
         uses: actions/setup-node@v4
         with:
