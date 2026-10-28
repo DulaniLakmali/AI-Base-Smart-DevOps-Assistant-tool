@@ -4,7 +4,7 @@
 **Horizon Campus — Faculty of Information Technology**  
 **Degree:** BSc (Hons.) in Information Technology  
 **Module:** IT41028 – Final Year Project  
-**Authors:** B.L.A.I. Maduwanthi, T.V.M. Weerasooriya, I.A. Dayananda, V.A.D.L. Karunarathna  
+**Authors:** V.A.D.L. Karunarathna  
 **Supervisors:** Isuru Samarappulige, Anuradha Ishani Yapa  
 
 ---
